@@ -87,6 +87,7 @@ export const DEFAULT_ARABIC_ALIASES: Record<string, string> = {
   irole: 'صورةرول',
   reactrole: 'رولتفاعل',
   unnew: 'فكجديد',
+  verify: 'فعل',
   antidelete: 'منعحذف',
   antilinks: 'منعرابط',
   antiperms: 'منعصلاحيات',

@@ -1,4 +1,5 @@
 import { ChannelType, PermissionFlagsBits, type Guild, type GuildMember } from 'discord.js';
+import type { GuildConfig } from '../database/guild-config.js';
 import { getGuildConfig } from '../database/guild-config.js';
 import { prisma } from '../database/prisma.js';
 import { NEW_CHANNEL_NAME, VERIFY_CHANNEL_NAME } from '../shared/constants.js';
@@ -108,6 +109,34 @@ export async function handleMemberJoin(member: GuildMember): Promise<boolean> {
   }
 
   return false;
+}
+
+export interface CompleteVerificationResult {
+  removedUnverified: boolean;
+  autorolesAdded: string[];
+}
+
+/** Remove Unverified and apply configured auto-roles (post-verification). */
+export async function completeMemberVerification(
+  member: GuildMember,
+  cfg: Pick<GuildConfig, 'unverifiedRoleId' | 'autoRoleIds'>,
+): Promise<CompleteVerificationResult> {
+  const result: CompleteVerificationResult = { removedUnverified: false, autorolesAdded: [] };
+
+  if (cfg.unverifiedRoleId && member.roles.cache.has(cfg.unverifiedRoleId)) {
+    await member.roles.remove(cfg.unverifiedRoleId).catch(() => {});
+    result.removedUnverified = true;
+  }
+
+  if (cfg.autoRoleIds.length) {
+    const toAdd = cfg.autoRoleIds.filter((id) => !member.roles.cache.has(id));
+    if (toAdd.length) {
+      await member.roles.add(toAdd).catch(() => {});
+      result.autorolesAdded = toAdd;
+    }
+  }
+
+  return result;
 }
 
 function defaultVerifyMessage(member: GuildMember): string {

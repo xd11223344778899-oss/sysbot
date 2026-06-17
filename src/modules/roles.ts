@@ -5,6 +5,8 @@ import { resolveMember, resolveRole } from '../shared/resolvers.js';
 import { prisma } from '../database/prisma.js';
 import { updateGuildConfig } from '../database/guild-config.js';
 import { runRoleMulti, isRoleBulkRunning, type RoleScope } from '../services/role-bulk.js';
+import { completeMemberVerification } from '../services/member-gate.js';
+import { logModerationAction } from '../services/log-service.js';
 
 const role: Command = {
   name: 'role',
@@ -309,6 +311,51 @@ const unnew: Command = {
   },
 };
 
+const verify: Command = {
+  name: 'verify',
+  description: 'Verify member — remove Unverified and apply auto-roles',
+  category: 'roles',
+  permission: 'mod',
+  usage: '<@user>',
+  async execute({ message, guild, member, args, config, client }) {
+    const target = await resolveMember(guild, args[0]);
+    if (!target) {
+      await message.reply({ embeds: [errorEmbed('حدد العضو المراد تفعيله: verify <@عضو>.')] });
+      return;
+    }
+    if (!config.unverifiedRoleId) {
+      await message.reply({
+        embeds: [errorEmbed('رول Unverified غير مضبوط. شغّل lsetup أو setverify أولاً.')],
+      });
+      return;
+    }
+    if (!target.roles.cache.has(config.unverifiedRoleId)) {
+      await message.reply({
+        embeds: [errorEmbed('هذا العضو لا يملك رول Unverified.')],
+      });
+      return;
+    }
+
+    const result = await completeMemberVerification(target, config);
+    const autoroleLine = result.autorolesAdded.length
+      ? `\nالرولات التلقائية: ${result.autorolesAdded.map((id) => `<@&${id}>`).join(' ')}`
+      : '';
+
+    await message.reply({
+      embeds: [successEmbed(`تم تفعيل ${target}.${autoroleLine}`)],
+    });
+
+    void logModerationAction(client, guild.id, {
+      title: 'تفعيل عضو',
+      moderatorId: member.id,
+      targetId: target.id,
+      targetTag: target.user.tag,
+      channelId: message.channelId,
+      event: 'verify',
+    });
+  },
+};
+
 export const roleCommands: Command[] = [
   role,
   rolemulti,
@@ -324,4 +371,5 @@ export const roleCommands: Command[] = [
   irole,
   reactrole,
   unnew,
+  verify,
 ];
