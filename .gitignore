@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.env
+*.log
+logs/
+.DS_Store
+
+# Local SQLite database files (keep the directory via .gitkeep)
+data/*.db
+data/*.db-journal
+data/*.db-wal
+data/*.db-shm

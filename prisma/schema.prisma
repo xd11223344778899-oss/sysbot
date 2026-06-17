@@ -1,0 +1,323 @@
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "debian-openssl-3.0.x"]
+}
+
+// Local, zero-config SQLite database. The file lives in the project `data/`
+// folder by default and can be pointed at a Railway volume in production.
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// NOTE: SQLite (via Prisma) does not support native enums or scalar lists.
+// - "enum" fields are stored as String (allowed values documented in code,
+//   see src/shared/enums.ts).
+// - list fields are stored as JSON-encoded String (parsed in guild-config).
+
+// ---------------------------------------------------------------------------
+// Per-guild configuration. One row per Discord server.
+// ---------------------------------------------------------------------------
+model Guild {
+  id           String  @id // Discord guild id
+  prefix       String  @default("!")
+  noPrefixMode Boolean @default(false)
+
+  // Setup state
+  setupDone   Boolean @default(false)
+  logCategory String?
+  modCategory String?
+
+  // System role ids created during setup
+  mutedRoleId      String?
+  prisonRoleId     String?
+  vmuteRoleId      String?
+  newRoleId        String?
+  unverifiedRoleId String?
+
+  // Special / decorative roles
+  picRoleId   String?
+  hereRoleId  String?
+  liveRoleId  String?
+  autoRoleIds String  @default("[]") // JSON string[]
+
+  // Channels used by member-gating systems
+  newChannelId    String?
+  verifyChannelId String?
+
+  // Logging mode: "DETAILED" | "COMPACT"
+  logMode String @default("DETAILED")
+
+  // New-account gating (the "new" system)
+  newEnabled    Boolean @default(false)
+  newMinAgeDays Int     @default(0)
+  newMessage    String?
+
+  // Verification
+  verifyEnabled  Boolean @default(false)
+  verifyMessage  String?
+  verifiedRoleId String?
+
+  // antijoin action for brand new accounts: "NONE" | "BAN" | "PRISON" | "KICK"
+  antijoinEnabled    Boolean @default(false)
+  antijoinAction     String  @default("NONE")
+  antijoinMinAgeDays Int     @default(0)
+
+  // Moderation settings
+  banMessage      String?
+  punishOnlyAdmin Boolean @default(false) // only the punisher (or owners) can lift
+  reasons         String  @default("[]") // legacy JSON string[] (migrated to punishReasons)
+  punishReasons   String  @default("[]") // JSON PunishReason[]
+
+  // Protection toggles
+  antiDelete      Boolean @default(false)
+  antiLinks       Boolean @default(false)
+  antiPerms       Boolean @default(false)
+  antiBots        Boolean @default(false)
+  antiWord        Boolean @default(false)
+  bannedWords     String  @default("[]") // JSON string[]
+  protectionLimit Int     @default(3)
+
+  // Spam limits
+  spamEnabled  Boolean @default(false)
+  spamMessages Int     @default(5)
+  spamSeconds  Int     @default(5)
+
+  // Auto chat features
+  autoLine   Boolean @default(false)
+  autoClear  Boolean @default(false)
+  autoReact  Boolean @default(false)
+  reactEmoji String?
+  embedColor String  @default("#5865F2")
+  embedPic   String?
+
+  // Invites / link
+  linkInfo String?
+
+  // Relations
+  logChannels     GuildLogChannel[]
+  owners          BotOwner[]
+  accessEntries   AccessEntry[]
+  commandConfigs  CommandConfig[]
+  penalties       Penalty[]
+  warns           Warn[]
+  points          Point[]
+  trustEntries    TrustEntry[]
+  blacklistChats  BlacklistChat[]
+  channelDenies   ChannelDeny[]
+  specialRoles    SpecialRole[]
+  reactionRoles   ReactionRole[]
+  tasks           ModTask[]
+  exemptions      Exemption[]
+  punishPerms     PunishPerm[]
+  antiCollections AntiCollection[]
+  commandAliases  CommandAlias[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// One channel per logged event type (detailed) or shared (compact).
+model GuildLogChannel {
+  id        String @id @default(cuid())
+  guild     Guild  @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  guildId   String
+  eventType String // e.g. "memberJoin", "messageDelete", "voiceMove"
+  channelId String
+
+  @@unique([guildId, eventType])
+  @@index([guildId])
+}
+
+// Bot-level owners, independent from Discord ownership.
+model BotOwner {
+  id      String @id @default(cuid())
+  guild   Guild  @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  guildId String
+  userId  String
+
+  @@unique([guildId, userId])
+  @@index([guildId])
+}
+
+// allow / deny lists for command usage. Target can be a user or a role.
+// type: "USER" | "ROLE"  |  mode: "ALLOW" | "DENY"
+model AccessEntry {
+  id       String @id @default(cuid())
+  guild    Guild  @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  guildId  String
+  targetId String
+  type     String
+  mode     String
+
+  @@unique([guildId, targetId, mode])
+  @@index([guildId])
+}
+
+// Per-command enable/disable + required permission overrides (cmd command).
+model CommandConfig {
+  id             String  @id @default(cuid())
+  guild          Guild   @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  guildId        String
+  commandName    String
+  enabled        Boolean @default(true)
+  allowedRoleIds String  @default("[]") // JSON string[]
+  allowedUserIds String  @default("[]") // JSON string[]
+
+  @@unique([guildId, commandName])
+  @@index([guildId])
+}
+
+// Active and historical penalties (mute, prison, vmute, ban, etc.).
+// type: "MUTE" | "PRISON" | "VMUTE" | "BAN" | "BLACKLIST" | "BLOCK" | "WARN"
+model Penalty {
+  id          String    @id @default(cuid())
+  guild       Guild     @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  guildId     String
+  userId      String
+  type        String
+  moderatorId String
+  reason      String?
+  active      Boolean   @default(true)
+  expiresAt   DateTime?
+  createdAt   DateTime  @default(now())
+  liftedAt    DateTime?
+  liftedById  String?
+
+  @@index([guildId, userId])
+  @@index([active, expiresAt])
+}
+
+model Warn {
+  id          String   @id @default(cuid())
+  guild       Guild    @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  guildId     String
+  userId      String
+  moderatorId String
+  reason      String?
+  createdAt   DateTime @default(now())
+
+  @@index([guildId, userId])
+}
+
+model Point {
+  id      String @id @default(cuid())
+  guild   Guild  @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  guildId String
+  userId  String
+  amount  Int    @default(0)
+
+  @@unique([guildId, userId])
+  @@index([guildId])
+}
+
+model TrustEntry {
+  id      String @id @default(cuid())
+  guild   Guild  @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  guildId String
+  userId  String
+
+  @@unique([guildId, userId])
+}
+
+model BlacklistChat {
+  id        String @id @default(cuid())
+  guild     Guild  @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  guildId   String
+  channelId String
+
+  @@unique([guildId, channelId])
+}
+
+// Per-channel join allow/deny for voice channels (callow / cdeny).
+// mode: "ALLOW" | "DENY"
+model ChannelDeny {
+  id        String @id @default(cuid())
+  guild     Guild  @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  guildId   String
+  channelId String
+  userId    String
+  mode      String
+
+  @@unique([guildId, channelId, userId])
+  @@index([guildId])
+}
+
+// Per-member personal roles (srole / myrole / color).
+model SpecialRole {
+  id      String @id @default(cuid())
+  guild   Guild  @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  guildId String
+  ownerId String
+  roleId  String
+
+  @@unique([guildId, ownerId])
+}
+
+model ReactionRole {
+  id        String @id @default(cuid())
+  guild     Guild  @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  guildId   String
+  messageId String
+  emoji     String
+  roleId    String
+
+  @@unique([guildId, messageId, emoji])
+}
+
+model ModTask {
+  id        String   @id @default(cuid())
+  guild     Guild    @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  guildId   String
+  userId    String
+  task      String
+  done      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([guildId, userId])
+}
+
+// An exemption shields a user from a given penalty type until removed.
+model Exemption {
+  id      String @id @default(cuid())
+  guild   Guild  @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  guildId String
+  userId  String
+  type    String
+
+  @@unique([guildId, userId, type])
+}
+
+// Who may lift punishments (pallow / plist).
+model PunishPerm {
+  id      String @id @default(cuid())
+  guild   Guild  @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  guildId String
+  userId  String
+
+  @@unique([guildId, userId])
+}
+
+// Per-guild custom command aliases (doadd / dochange).
+model CommandAlias {
+  id          String  @id @default(cuid())
+  guild       Guild   @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  guildId     String
+  commandName String
+  alias       String
+  isPrimary   Boolean @default(false)
+
+  @@unique([guildId, alias])
+  @@index([guildId, commandName])
+}
+
+// Anti-role collections (collection / ecollection): grouped settings as JSON.
+model AntiCollection {
+  id      String @id @default(cuid())
+  guild   Guild  @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  guildId String
+  name    String
+  data    String @default("{}") // JSON object
+
+  @@unique([guildId, name])
+}

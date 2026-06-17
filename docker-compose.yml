@@ -1,0 +1,14 @@
+# Local/self-hosted run. No external database service needed — the bot uses a
+# file-based SQLite database persisted in the `botdata` volume.
+services:
+  bot:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: file:/data/sysbot.db
+    volumes:
+      - botdata:/data
+
+volumes:
+  botdata:
