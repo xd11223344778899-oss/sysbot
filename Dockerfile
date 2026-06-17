@@ -14,9 +14,8 @@ RUN npm install
 COPY . .
 RUN npm run build
 
-# SQLite database lives in /data (mount a volume here to persist).
+# SQLite on Railway: mount a Volume at /data and set DATABASE_URL=file:/data/sysbot.db
+# (Do not use Docker VOLUME — Railway uses its own Volume mounts.)
 ENV DATABASE_URL=file:/data/sysbot.db
-VOLUME ["/data"]
 
-# Real restart support: process exits, the orchestrator restarts it.
 CMD ["npm", "run", "start:prod"]

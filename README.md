@@ -33,9 +33,9 @@ npm start
 
 ## النشر على Railway
 
-1. اربط المستودع الخاص على GitHub بمشروع Railway (New Project → Deploy from GitHub → اختر `sysbot`).
-2. Railway يكتشف Node تلقائياً عبر Nixpacks ويقرأ [railway.json](railway.json) (`npm run build` ثم `node dist/index.js`).
-3. أضف **Volume** على المسار `/data` (إلزامي — بدونه تُفقد الإعدادات عند كل deploy).
+1. اربط المستودع على GitHub بمشروع Railway (New Project → Deploy from GitHub → اختر `sysbot`).
+2. Railway يبني عبر [Dockerfile](Dockerfile) (`npm run build`) ثم يشغّل `npm run start:prod` (ينشئ/يحدّث SQLite على Volume ثم يشغّل البوت).
+3. أضف **Volume** على المسار `/data` (إلزامي — بدونه تُفقد الإعدادات عند كل deploy). لا تستخدم `VOLUME` في Dockerfile؛ Railway يوفّر Volumes من لوحة التحكم فقط.
 4. اضبط متغيرات البيئة:
 
 | المتغير | القيمة |
