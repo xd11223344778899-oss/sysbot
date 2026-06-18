@@ -79,14 +79,18 @@ function confidenceFromSignals(signals: ReturnType<typeof activeSignals>): numbe
 }
 
 export async function loadStressStates(): Promise<void> {
-  const now = Date.now();
-  const rows = await prisma.channelStressState.findMany({
-    where: { autoLineSuspendedUntil: { gt: new Date(now) } },
-  });
-  for (const row of rows) {
-    const key = channelKey(row.guildId, row.channelId);
-    const m = getMetrics(key);
-    m.lastBotLineAt = row.updatedAt.getTime();
+  try {
+    const now = Date.now();
+    const rows = await prisma.channelStressState.findMany({
+      where: { autoLineSuspendedUntil: { gt: new Date(now) } },
+    });
+    for (const row of rows) {
+      const key = channelKey(row.guildId, row.channelId);
+      const m = getMetrics(key);
+      m.lastBotLineAt = row.updatedAt.getTime();
+    }
+  } catch {
+    // Schema not ready yet — non-fatal on first deploy.
   }
 }
 

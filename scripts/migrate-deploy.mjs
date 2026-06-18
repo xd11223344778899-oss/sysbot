@@ -19,6 +19,27 @@ function deploySafe() {
   }
 }
 
+function runWithStdin(cmd, input) {
+  execSync(cmd, {
+    stdio: ['pipe', 'pipe', 'pipe'],
+    encoding: 'utf8',
+    env: process.env,
+    input,
+  });
+}
+
+function guildTableExists() {
+  try {
+    runWithStdin(
+      'npx prisma db execute --stdin',
+      "SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='Guild' LIMIT 1;",
+    );
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function recover() {
   console.warn(`Recovering from failed ${INIT_MIGRATION}...`);
 
@@ -31,33 +52,42 @@ function recover() {
   const retry = deploySafe();
   if (retry.ok) return;
 
-  // Tables may already exist from a partial run — mark applied and continue.
   if (
-    retry.out.includes('already exists') ||
-    retry.out.includes('42P07') ||
-    retry.out.includes('P3009')
+    (retry.out.includes('already exists') || retry.out.includes('42P07')) &&
+    guildTableExists()
   ) {
-    console.warn(`Marking ${INIT_MIGRATION} as applied.`);
-    try {
-      run(`npx prisma migrate resolve --applied ${INIT_MIGRATION}`, false);
-      return;
-    } catch (err) {
-      const out = `${err.stdout ?? ''}\n${err.stderr ?? ''}\n${err.message ?? ''}`;
-      console.error(out);
-      process.exit(1);
-    }
+    console.warn(`Marking ${INIT_MIGRATION} as applied (schema present).`);
+    run(`npx prisma migrate resolve --applied ${INIT_MIGRATION}`, false);
+    return;
   }
 
-  console.error(retry.out);
+  console.error(
+    [
+      'Database migration could not be completed.',
+      retry.out,
+      '',
+      'Fix: Railway → Postgres → Data → Reset Database, then Redeploy the bot.',
+    ].join('\n'),
+  );
   process.exit(1);
 }
 
 function main() {
   const first = deploySafe();
-  if (first.ok) return;
+  if (first.ok) {
+    if (!guildTableExists()) {
+      console.error('Migration reported success but Guild table is missing. Reset Postgres and redeploy.');
+      process.exit(1);
+    }
+    return;
+  }
 
   if (first.out.includes('P3009') && first.out.includes(INIT_MIGRATION)) {
     recover();
+    if (!guildTableExists()) {
+      console.error('Migration recovery finished but Guild table is missing. Reset Postgres and redeploy.');
+      process.exit(1);
+    }
     return;
   }
 
