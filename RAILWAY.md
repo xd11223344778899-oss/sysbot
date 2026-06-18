@@ -17,7 +17,6 @@
 | `DEFAULT_PREFIX` | `!` |
 | `CMD_RATE_LIMIT_MAX` | `3` |
 | `CMD_RATE_LIMIT_WINDOW_MS` | `5000` |
-| `SHARD_COUNT` | `0` |
 | `LOG_LEVEL` | `info` |
 | `LOG_PRETTY` | `false` |
 
