@@ -2,7 +2,6 @@ import {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
-  PermissionFlagsBits,
   StringSelectMenuBuilder,
   type ButtonInteraction,
   type Guild,
@@ -11,8 +10,7 @@ import {
 import { prisma } from '../database/prisma.js';
 import { baseEmbed, successEmbed } from '../shared/embeds.js';
 import { INTERACTIVE_GRANTABLE_COMMANDS } from '../shared/constants.js';
-import { applyAllOverwritesToGuild, buildPermissionContext } from './channel-permissions.js';
-import { invalidateGuildConfig } from '../database/guild-config.js';
+import { buildInteractiveGuildPermissions } from './role-permission-matrix.js';
 
 const ROLES_PER_PAGE = 20;
 const SESSION_TTL_MS = 300_000;
@@ -199,17 +197,9 @@ async function applyDrafts(guild: Guild, session: PanelSession): Promise<void> {
     });
     const role = guild.roles.cache.get(roleId);
     if (!role) continue;
-    const perms = role.permissions.bitfield;
-    let next = perms;
-    if (d.muteMembers) next |= PermissionFlagsBits.MuteMembers;
-    else next &= ~PermissionFlagsBits.MuteMembers;
-    if (d.deafenMembers) next |= PermissionFlagsBits.DeafenMembers;
-    else next &= ~PermissionFlagsBits.DeafenMembers;
-    await role.setPermissions(next).catch(() => {});
+    const bits = buildInteractiveGuildPermissions(d);
+    await role.setPermissions(bits, 'SysBot: interactive role panel').catch(() => {});
   }
-  invalidateGuildConfig(guild.id);
-  const ctx = await buildPermissionContext(guild.id);
-  await applyAllOverwritesToGuild(guild, ctx);
 }
 
 export async function openInteractiveRolePanel(

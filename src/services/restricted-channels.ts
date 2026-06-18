@@ -45,7 +45,11 @@ async function ensureRestrictedChannel(
           id: roleId,
           allow:
             type === ChannelType.GuildVoice
-              ? [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.Connect, PermissionFlagsBits.Speak]
+              ? [
+                  PermissionFlagsBits.ViewChannel,
+                  PermissionFlagsBits.Connect,
+                  PermissionFlagsBits.Speak,
+                ]
               : [
                   PermissionFlagsBits.ViewChannel,
                   PermissionFlagsBits.SendMessages,
@@ -55,18 +59,22 @@ async function ensureRestrictedChannel(
       ],
     });
   } else if ('permissionOverwrites' in channel) {
+    const textAllows =
+      type === ChannelType.GuildText
+        ? {
+            ViewChannel: true,
+            SendMessages: true,
+            ReadMessageHistory: true,
+          }
+        : {
+            ViewChannel: true,
+            Connect: true,
+            Speak: true,
+          };
     await channel.permissionOverwrites
       .edit(guild.roles.everyone.id, { ViewChannel: false })
       .catch(() => {});
-    await channel.permissionOverwrites
-      .edit(roleId, {
-        ViewChannel: true,
-        SendMessages: type === ChannelType.GuildText ? true : undefined,
-        ReadMessageHistory: type === ChannelType.GuildText ? true : undefined,
-        Connect: type === ChannelType.GuildVoice ? true : undefined,
-        Speak: type === ChannelType.GuildVoice ? true : undefined,
-      })
-      .catch(() => {});
+    await channel.permissionOverwrites.edit(roleId, textAllows).catch(() => {});
   }
   return channel.id;
 }

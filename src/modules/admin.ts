@@ -496,13 +496,31 @@ function makePicMentionCommand(name: string, description: string, allow: boolean
     async execute({ message, guild }) {
       const channel = message.channel;
       if (!('permissionOverwrites' in channel)) return;
-      await channel.permissionOverwrites.edit(guild.roles.everyone, {
-        AttachFiles: allow ? null : false,
-        EmbedLinks: allow ? null : false,
-      });
-      await message.reply({
-        embeds: [successEmbed(allow ? 'تم السماح بالصور والمنشن في هذا الشات.' : 'تم منع الصور والمنشن في هذا الشات.')],
-      });
+      if (allow) {
+        await channel.permissionOverwrites.edit(guild.roles.everyone, {
+          AttachFiles: null,
+          EmbedLinks: null,
+        });
+        await message.reply({
+          embeds: [
+            successEmbed(
+              'تم إرجاع صلاحيات @everyone في هذه القناة للوضع الافتراضي (وراثة من السيرفر). استخدم رول Pic للصور.',
+            ),
+          ],
+        });
+      } else {
+        await channel.permissionOverwrites.edit(guild.roles.everyone, {
+          AttachFiles: false,
+          EmbedLinks: false,
+        });
+        await message.reply({
+          embeds: [
+            successEmbed(
+              'تم منع المرفقات والإمبد على @everyone في هذه القناة فقط. المنشن يبقى عبر رول Here على مستوى السيرفر.',
+            ),
+          ],
+        });
+      }
     },
   };
 }

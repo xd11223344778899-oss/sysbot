@@ -1,5 +1,4 @@
 import {
-  ChannelType,
   PermissionFlagsBits,
   type Guild,
   type GuildBasedChannel,
@@ -11,6 +10,10 @@ import { logger } from '../logger.js';
 import { applyTextMuteOverwriteToChannel } from './text-mute-overwrites.js';
 import { applyUnverifiedOverwriteToChannel } from './verify-overwrites.js';
 import { isRestrictedChannel, type RestrictedChannelIds } from './restricted-channels.js';
+import {
+  decorRoleIdsFromContext,
+  EVERYONE_CHANNEL_RESET,
+} from './role-permission-matrix.js';
 
 export interface ChannelPermissionContext {
   mutedRoleId: string | null;
@@ -53,18 +56,13 @@ export function channelAcceptsOverwrites(
   return 'permissionOverwrites' in channel;
 }
 
-function isTextLike(channel: GuildBasedChannel): boolean {
-  return (
-    channel.type === ChannelType.GuildText ||
-    channel.type === ChannelType.GuildAnnouncement ||
-    channel.type === ChannelType.GuildForum ||
-    channel.type === ChannelType.GuildMedia
-  );
-}
-
-function isVoiceLike(channel: GuildBasedChannel): boolean {
-  return channel.type === ChannelType.GuildVoice || channel.type === ChannelType.GuildStageVoice;
-}
+const EVERYONE_DECOR_FLAGS = [
+  PermissionFlagsBits.AttachFiles,
+  PermissionFlagsBits.EmbedLinks,
+  PermissionFlagsBits.MentionEveryone,
+  PermissionFlagsBits.Stream,
+  PermissionFlagsBits.UseEmbeddedActivities,
+] as const;
 
 export async function buildPermissionContext(guildId: string): Promise<ChannelPermissionContext> {
   const cfg = await getGuildConfig(guildId);
@@ -126,7 +124,18 @@ async function applyOverwrite(
 ): Promise<PermApplyResult> {
   try {
     const had = channel.permissionOverwrites.cache.has(roleId);
-    const payload: Record<string, boolean | null> = { ...(allow ?? {}), ...(deny ?? {}) };
+    const payload: Record<string, boolean | null> = {};
+    if (allow) {
+      for (const [key, value] of Object.entries(allow)) {
+        if (value !== null) payload[key] = value;
+      }
+    }
+    if (deny) {
+      for (const [key, value] of Object.entries(deny)) {
+        if (value !== null) payload[key] = value;
+      }
+    }
+    if (Object.keys(payload).length === 0) return 'unchanged';
     await channel.permissionOverwrites.edit(roleId, payload);
     return had ? 'fixed' : 'applied';
   } catch (err) {
@@ -135,75 +144,42 @@ async function applyOverwrite(
   }
 }
 
-export async function applyEveryoneBaseline(
+/** Reset legacy @everyone decor denies in channels — policy is guild-level only. */
+export async function cleanupEveryoneDecorOverwrites(
   channel: GuildBasedChannel,
-  ctx: ChannelPermissionContext,
 ): Promise<PermApplyResult> {
-  if (!ctx.decorBaselineEnabled || !channelAcceptsOverwrites(channel)) return 'skipped';
-  if (isVoiceLike(channel)) {
-    try {
-      await channel.permissionOverwrites.edit(channel.guild.roles.everyone.id, { Stream: false });
-      return 'fixed';
-    } catch {
-      return 'skipped';
-    }
-  }
-  if (!isTextLike(channel)) return 'skipped';
+  if (!channelAcceptsOverwrites(channel)) return 'skipped';
+  const everyoneId = channel.guild.roles.everyone.id;
+  const ow = channel.permissionOverwrites.cache.get(everyoneId);
+  if (!ow) return 'unchanged';
+  const needsReset = EVERYONE_DECOR_FLAGS.some(
+    (flag) => ow.deny.has(flag) || ow.allow.has(flag),
+  );
+  if (!needsReset) return 'unchanged';
   try {
-    await channel.permissionOverwrites.edit(channel.guild.roles.everyone.id, {
-      AttachFiles: false,
-      EmbedLinks: false,
-      MentionEveryone: false,
-    });
+    await channel.permissionOverwrites.edit(everyoneId, { ...EVERYONE_CHANNEL_RESET });
     return 'fixed';
-  } catch {
+  } catch (err) {
+    logger.warn({ err, channelId: channel.id }, 'everyone decor cleanup failed');
     return 'skipped';
   }
 }
 
-export async function applyDecorOverwrites(
+/** Remove Pic/Here/Live channel overwrites left from older syncs. */
+export async function cleanupStaleDecorOverwrites(
   channel: GuildBasedChannel,
   ctx: ChannelPermissionContext,
-  guildId?: string,
 ): Promise<PermApplyResult> {
-  if (!ctx.decorBaselineEnabled || !channelAcceptsOverwrites(channel)) return 'skipped';
+  if (!channelAcceptsOverwrites(channel)) return 'skipped';
   let last: PermApplyResult = 'unchanged';
-  if (isTextLike(channel)) {
-    if (ctx.picRoleId) {
-      last = await applyOverwrite(channel, ctx.picRoleId, {
-        AttachFiles: true,
-        EmbedLinks: true,
-      }, null);
-    }
-    if (ctx.hereRoleId) {
-      const r = await applyOverwrite(channel, ctx.hereRoleId, { MentionEveryone: true }, null);
-      if (r !== 'unchanged') last = r;
-    }
-  }
-  if (isVoiceLike(channel) && ctx.liveRoleId) {
-    const r = await applyOverwrite(channel, ctx.liveRoleId, { Stream: true }, null);
-    if (r !== 'unchanged') last = r;
-  }
-  if (guildId) {
-    const interactive = await prisma.interactiveRole.findMany({ where: { guildId } });
-    for (const row of interactive) {
-      if (isTextLike(channel)) {
-        if (row.attachFiles) {
-          const r = await applyOverwrite(channel, row.roleId, {
-            AttachFiles: true,
-            EmbedLinks: true,
-          }, null);
-          if (r !== 'unchanged') last = r;
-        }
-        if (row.mentionEveryone) {
-          const r = await applyOverwrite(channel, row.roleId, { MentionEveryone: true }, null);
-          if (r !== 'unchanged') last = r;
-        }
-      }
-      if (isVoiceLike(channel) && row.stream) {
-        const r = await applyOverwrite(channel, row.roleId, { Stream: true }, null);
-        if (r !== 'unchanged') last = r;
-      }
+  for (const roleId of decorRoleIdsFromContext(ctx)) {
+    if (!channel.permissionOverwrites.cache.has(roleId)) continue;
+    try {
+      await channel.permissionOverwrites.delete(roleId);
+      last = 'fixed';
+    } catch (err) {
+      logger.warn({ err, channelId: channel.id, roleId }, 'stale decor cleanup failed');
+      last = 'skipped';
     }
   }
   return last;
@@ -214,12 +190,6 @@ export async function applyPrisonOverwrite(
   ctx: ChannelPermissionContext,
 ): Promise<PermApplyResult> {
   if (!ctx.prisonRoleId || !channelAcceptsOverwrites(channel)) return 'skipped';
-  if (!ctx.restricted) return 'skipped';
-  const isPrisonChannel =
-    channel.id === ctx.restricted.prisonChannelId || channel.id === ctx.restricted.prisonVoiceId;
-  if (isPrisonChannel) {
-    return applyOverwrite(channel, ctx.prisonRoleId, { ViewChannel: true }, null);
-  }
   return applyOverwrite(channel, ctx.prisonRoleId, null, { ViewChannel: false });
 }
 
@@ -228,12 +198,6 @@ export async function applyBlacklistedOverwrite(
   ctx: ChannelPermissionContext,
 ): Promise<PermApplyResult> {
   if (!ctx.blacklistedRoleId || !channelAcceptsOverwrites(channel)) return 'skipped';
-  if (!ctx.restricted) return 'skipped';
-  const isBlackChannel =
-    channel.id === ctx.restricted.blackChannelId || channel.id === ctx.restricted.blackVoiceId;
-  if (isBlackChannel) {
-    return applyOverwrite(channel, ctx.blacklistedRoleId, { ViewChannel: true }, null);
-  }
   return applyOverwrite(channel, ctx.blacklistedRoleId, null, { ViewChannel: false });
 }
 
@@ -248,8 +212,8 @@ export async function applyAllOverwritesToChannel(
     return stats;
   }
 
-  bump(stats, await applyEveryoneBaseline(channel, ctx));
-  bump(stats, await applyDecorOverwrites(channel, ctx, channel.guild.id));
+  bump(stats, await cleanupEveryoneDecorOverwrites(channel));
+  bump(stats, await cleanupStaleDecorOverwrites(channel, ctx));
   bump(stats, await applyPrisonOverwrite(channel, ctx));
   bump(stats, await applyBlacklistedOverwrite(channel, ctx));
 

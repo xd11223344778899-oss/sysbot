@@ -108,7 +108,20 @@ docker compose up -d --build
 
 ## صلاحيات Pic / Here / Live
 
-بعد `lsetup`، يُطبَّق على `@everyone` في القنوات النصية: منع المرفقات والإمبد والمنشن الجماعي؛ وفي الصوت: منع البث (Go Live). الرولات **Pic**، **Here**، **Live** تمنح الاستثناء المناسب. طبقة إضافية تحذف الرسائل المخالفة تلقائياً (مع احترام الوايت لست و`ManageMessages`).
+سياسة **الحد الأدنى** على مستوى السيرفر فقط (بدون overwrites قنوات لـ Pic/Here/Live):
+
+| الرول | صلاحية السيرفر | overwrites القنوات |
+|-------|----------------|-------------------|
+| @everyone | الأساسية فقط — **بدون** AttachFiles / EmbedLinks / MentionEveryone / Stream | لا تُعدَّل في القنوات (وراثة `/`) |
+| Pic | AttachFiles فقط | لا |
+| Here | MentionEveryone فقط | لا |
+| Live | Stream فقط | لا |
+
+`lsetup sync` يضبط @everyone والرولات أعلاه ويزيل overwrites قديمة لـ Pic/Here/Live من القنوات. `decorBaselineEnabled` يفعّل **message guard** (حذف رسائل مخالفة) وليس deny على @everyone في القنوات.
+
+رولات **Muted / Prison / Blacklisted / Unverified**: صفر صلاحيات على الرول في السيرفر؛ القيود عبر overwrite في كل قناة (ما عدا قنوات Restricted و اللوق).
+
+`applay` / `disapplay`: استثناء **قناة واحدة** لـ @everyone (مرفقات/إمبد فقط). المنشن عبر رول Here.
 
 ## الرولات التفاعلية
 
