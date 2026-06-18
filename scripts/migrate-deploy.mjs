@@ -2,7 +2,6 @@
  * Runs prisma migrate deploy; recovers from a failed init migration (P3009) on Railway.
  */
 import { execSync } from 'node:child_process';
-import { PrismaClient } from '@prisma/client';
 
 const INIT_MIGRATION = '20250617120000_init_postgresql';
 
@@ -20,20 +19,9 @@ function deploySafe() {
   }
 }
 
-async function guildTableExists(prisma) {
-  const rows = await prisma.$queryRaw`SELECT to_regclass('public."Guild"') AS name`;
-  return Boolean(rows?.[0]?.name);
-}
+function recover() {
+  console.warn(`Recovering from failed ${INIT_MIGRATION}...`);
 
-async function recover(prisma) {
-  const exists = await guildTableExists(prisma);
-  if (exists) {
-    console.warn(`Marking ${INIT_MIGRATION} as applied (tables already exist).`);
-    run(`npx prisma migrate resolve --applied ${INIT_MIGRATION}`);
-    return;
-  }
-
-  console.warn(`Rolling back failed ${INIT_MIGRATION}, then re-applying.`);
   try {
     run(`npx prisma migrate resolve --rolled-back ${INIT_MIGRATION}`, false);
   } catch {
@@ -41,31 +29,40 @@ async function recover(prisma) {
   }
 
   const retry = deploySafe();
-  if (!retry.ok) {
-    console.error(retry.out);
-    process.exit(1);
-  }
-}
+  if (retry.ok) return;
 
-async function main() {
-  const prisma = new PrismaClient();
-  try {
-    const first = deploySafe();
-    if (first.ok) return;
-
-    if (first.out.includes('P3009') && first.out.includes(INIT_MIGRATION)) {
-      await recover(prisma);
+  // Tables may already exist from a partial run — mark applied and continue.
+  if (
+    retry.out.includes('already exists') ||
+    retry.out.includes('42P07') ||
+    retry.out.includes('P3009')
+  ) {
+    console.warn(`Marking ${INIT_MIGRATION} as applied.`);
+    try {
+      run(`npx prisma migrate resolve --applied ${INIT_MIGRATION}`, false);
       return;
+    } catch (err) {
+      const out = `${err.stdout ?? ''}\n${err.stderr ?? ''}\n${err.message ?? ''}`;
+      console.error(out);
+      process.exit(1);
     }
-
-    console.error(first.out);
-    process.exit(1);
-  } finally {
-    await prisma.$disconnect();
   }
+
+  console.error(retry.out);
+  process.exit(1);
 }
 
-main().catch((err) => {
-  console.error(err);
+function main() {
+  const first = deploySafe();
+  if (first.ok) return;
+
+  if (first.out.includes('P3009') && first.out.includes(INIT_MIGRATION)) {
+    recover();
+    return;
+  }
+
+  console.error(first.out);
   process.exit(1);
-});
+}
+
+main();
