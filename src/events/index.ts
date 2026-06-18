@@ -22,6 +22,7 @@ import {
   VOICE_LOG_EVENT_TYPE,
 } from '../services/voice-log-classifier.js';
 import { handlePunishmentInteraction } from '../services/punishment-flow.js';
+import { handleVoiceMoveConsentInteraction } from '../services/voice-move-consent.js';
 import { onVmuteVoiceUpdate } from '../services/vmute-guard.js';
 import { syncAllOverwritesOnChannelCreate } from '../services/channel-permissions.js';
 import { isTrusted, recordProtectionStrike } from '../services/trust-service.js';
@@ -106,6 +107,9 @@ export function registerEvents(client: Client): void {
 
   client.on(Events.InteractionCreate, async (interaction) => {
     try {
+      if (interaction.isButton()) {
+        if (await handleVoiceMoveConsentInteraction(interaction)) return;
+      }
       if (interaction.isStringSelectMenu() || interaction.isModalSubmit()) {
         if (await handlePunishmentInteraction(interaction)) return;
         if (interaction.isModalSubmit() && (await handleProtectionModal(interaction))) return;

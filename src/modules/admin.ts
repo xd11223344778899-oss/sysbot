@@ -202,7 +202,7 @@ const setchannel: Command = {
   description: 'Set new, verify, or prison text channel',
   category: 'vip',
   permission: 'admin',
-  usage: '<new|verify|prison> <#channel>',
+  usage: '<new|verify|prison|adminlounge> <#channel>',
   async execute({ message, guild, args }) {
     const type = args[0]?.toLowerCase();
     const channelId = args[1]?.replace(/\D/g, '') || message.channelId;
@@ -231,8 +231,19 @@ const setchannel: Command = {
       } else {
         await message.reply({ embeds: [successEmbed(`تم ضبط قناة التفعيل على <#${channelId}>.`)] });
       }
+    } else if (type === 'adminlounge') {
+      await updateGuildConfig(guild.id, { adminLoungeChannelId: channelId });
+      await message.reply({
+        embeds: [
+          successEmbed(
+            `تم ضبط قناة الإدارة الموحّدة على <#${channelId}>.\nتُستخدم لطلبات موافقة السحب الصوتي بين الإداريين.`,
+          ),
+        ],
+      });
     } else {
-      await message.reply({ embeds: [errorEmbed('استخدم: setchannel <new|verify|prison> <#قناة>.')] });
+      await message.reply({
+        embeds: [errorEmbed('استخدم: setchannel <new|verify|prison|adminlounge> <#قناة>.')],
+      });
     }
   },
 };

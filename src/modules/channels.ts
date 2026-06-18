@@ -5,6 +5,9 @@ import { resolveMember } from '../shared/resolvers.js';
 import { prisma } from '../database/prisma.js';
 import { invalidateGuildConfig, getGuildConfig } from '../database/guild-config.js';
 import { applyTextMuteOverwriteToChannel } from '../services/text-mute-overwrites.js';
+import { checkAdminHierarchy } from '../services/admin-hierarchy.js';
+import { requestVoiceMoveConsent } from '../services/voice-move-consent.js';
+import { canModerate } from '../services/mod-hierarchy.js';
 
 const lock: Command = {
   name: 'lock',
@@ -97,16 +100,53 @@ const move: Command = {
   category: 'channels',
   permission: 'mod',
   usage: '<@user>',
-  async execute({ message, guild, member, args }) {
+  async execute({ message, guild, member, args, client }) {
     const target = await resolveMember(guild, args[0]);
+    if (!target) {
+      await message.reply({ embeds: [errorEmbed('حدد عضواً صحيحاً.')] });
+      return;
+    }
     if (!member.voice.channel) {
       await message.reply({ embeds: [errorEmbed('يجب أن تكون في روم صوتي.')] });
       return;
     }
-    if (!target?.voice.channel) {
+    if (!target.voice.channel) {
       await message.reply({ embeds: [errorEmbed('العضو ليس في روم صوتي.')] });
       return;
     }
+
+    const hierarchy = await checkAdminHierarchy(member, target, { voiceMove: true });
+    if (hierarchy.status === 'denied') {
+      await message.reply({ embeds: [errorEmbed(hierarchy.reason ?? 'لا يمكنك سحب هذا العضو.')] });
+      return;
+    }
+    if (hierarchy.status === 'voice_consent_required') {
+      const result = await requestVoiceMoveConsent(
+        client,
+        member,
+        target,
+        member.voice.channel,
+      );
+      if (!result.ok) {
+        await message.reply({ embeds: [errorEmbed(result.reason)] });
+        return;
+      }
+      await message.reply({
+        embeds: [
+          successEmbed(
+            `تم إرسال طلب موافقة إلى قناة الإدارة الموحّدة — ${target} يجب أن يوافق خلال 60 ثانية.`,
+          ),
+        ],
+      });
+      return;
+    }
+
+    const modCheck = await canModerate(member, target);
+    if (!modCheck.allowed) {
+      await message.reply({ embeds: [errorEmbed(modCheck.reason ?? 'لا يمكنك سحب هذا العضو.')] });
+      return;
+    }
+
     await target.voice.setChannel(member.voice.channel);
     await message.reply({ embeds: [successEmbed(`تم نقل ${target} إليك.`)] });
   },

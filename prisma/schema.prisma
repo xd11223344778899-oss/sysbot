@@ -56,6 +56,9 @@ model Guild {
   newChannelId    String?
   verifyChannelId String?
 
+  // Unified text channel for admin coordination (voice-move consent, etc.)
+  adminLoungeChannelId String?
+
   // Logging mode: "DETAILED" | "COMPACT"
   logMode String @default("DETAILED")
 

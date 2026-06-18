@@ -2,6 +2,10 @@ import { PermissionFlagsBits, type Guild, type GuildMember, type Role } from 'di
 import { isOwner } from '../core/permission-engine.js';
 import { isTrusted } from './trust-service.js';
 import { getGuildAdminRoleIds } from './admin-role-panel.js';
+import {
+  checkAdminHierarchy,
+  getMemberAdminRank,
+} from './admin-hierarchy.js';
 
 export interface ModerationCheckResult {
   allowed: boolean;
@@ -25,6 +29,23 @@ export async function canModerate(
   if (await isTrusted(moderator.guild.id, target.id)) {
     return { allowed: false, reason: 'هذا العضو في قائمة الثقة (محمي من الإجراءات).' };
   }
+
+  const hierarchy = await checkAdminHierarchy(moderator, target, { voiceMove: false });
+  if (hierarchy.status === 'denied') {
+    return { allowed: false, reason: hierarchy.reason };
+  }
+  if (hierarchy.status === 'voice_consent_required') {
+    return {
+      allowed: false,
+      reason: hierarchy.reason ?? 'لا يمكنك تنفيذ هذا الإجراء — استخدم طلب الموافقة للسحب الصوتي فقط.',
+    };
+  }
+
+  const targetAdminRank = await getMemberAdminRank(moderator.guild.id, target);
+  if (targetAdminRank !== null) {
+    return { allowed: true };
+  }
+
   if (moderator.id !== moderator.guild.ownerId) {
     if (target.roles.highest.position >= moderator.roles.highest.position) {
       return { allowed: false, reason: 'لا يمكنك تنفيذ إجراء على عضو برول أعلى أو مساوٍ لرولك.' };
