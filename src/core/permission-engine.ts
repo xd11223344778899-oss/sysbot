@@ -2,6 +2,7 @@ import { PermissionFlagsBits, type GuildMember } from 'discord.js';
 import type { Command } from '../types/command.js';
 import { config } from '../config.js';
 import { prisma } from '../database/prisma.js';
+import { getInteractiveAllowedCommands } from '../services/interactive-role-panel.js';
 
 export interface PermissionResult {
   allowed: boolean;
@@ -96,5 +97,9 @@ export async function checkPermission(
 
   // 'mod'
   if (isAdmin(member) || allowed) return { allowed: true };
+
+  const interactiveCmds = await getInteractiveAllowedCommands(guildId, roleIds);
+  if (interactiveCmds.has(command.name)) return { allowed: true };
+
   return { allowed: false, reason: 'ليس لديك صلاحية لاستخدام هذا الأمر.' };
 }

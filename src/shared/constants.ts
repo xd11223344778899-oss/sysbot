@@ -1,10 +1,14 @@
-// System role definitions created during setup.
+// System role definitions created during setup (neutral formal colors, no emojis in names).
 export const SYSTEM_ROLES = {
-  muted: { key: 'mutedRoleId', name: 'Muted', color: 0x607d8b },
-  prison: { key: 'prisonRoleId', name: 'Prison', color: 0x424242 },
-  vmute: { key: 'vmuteRoleId', name: 'Voice-Muted', color: 0x795548 },
-  new: { key: 'newRoleId', name: 'New', color: 0xffc107 },
-  unverified: { key: 'unverifiedRoleId', name: 'Unverified', color: 0xff5722 },
+  muted: { key: 'mutedRoleId', name: 'Muted', color: 0x78909c },
+  prison: { key: 'prisonRoleId', name: 'Prison', color: 0x607d8c },
+  blacklisted: { key: 'blacklistedRoleId', name: 'Blacklisted', color: 0x455a64 },
+  vmute: { key: 'vmuteRoleId', name: 'Voice-Muted', color: 0x546e7a },
+  new: { key: 'newRoleId', name: 'New', color: 0xb0bec5 },
+  unverified: { key: 'unverifiedRoleId', name: 'Unverified', color: 0x757575 },
+  pic: { key: 'picRoleId', name: 'Pic', color: 0x90a4ae },
+  here: { key: 'hereRoleId', name: 'Here', color: 0x90a4ae },
+  live: { key: 'liveRoleId', name: 'Live', color: 0x90a4ae },
 } as const;
 
 // Every loggable event. The detailed mode creates a channel per entry; the
@@ -53,7 +57,30 @@ export const LOG_EVENTS: LogEventDef[] = [
 export const CATEGORY_NAMES = {
   logs: 'SysBot Logs',
   mod: 'SysBot System',
+  restricted: 'SysBot Restricted',
+} as const;
+
+export const RESTRICTED_CHANNELS = {
+  blackText: 'black-text',
+  blackVoice: 'black-voice',
+  prisonText: 'prison-text',
+  prisonVoice: 'prison-voice',
 } as const;
 
 export const NEW_CHANNEL_NAME = 'new';
 export const VERIFY_CHANNEL_NAME = 'verify';
+
+/** Mod commands grantable via interactive roles. */
+export const INTERACTIVE_GRANTABLE_COMMANDS = [
+  'mute',
+  'unmute',
+  'prison',
+  'unprison',
+  'vmute',
+  'unvmute',
+  'clear',
+  'kick',
+  'warn',
+  'black',
+  'unblack',
+] as const;

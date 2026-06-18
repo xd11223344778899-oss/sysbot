@@ -320,7 +320,7 @@ const resons: Command = {
   description: 'Manage punishment reason presets',
   category: 'vip',
   permission: 'admin',
-  usage: 'add <مدة> <السبب> [mute prison vmute ban kick] | remove <رقم|id> | edit <رقم> <مدة> <السبب> | list',
+  usage: 'add <مدة> <السبب> [mute prison vmute ban kick black] | remove <رقم|id> | edit <رقم> <مدة> <السبب> | list',
   async execute({ message, guild, args, rest }) {
     const typeMap: Record<string, PunishApplicableType> = {
       mute: 'MUTE',
@@ -328,6 +328,7 @@ const resons: Command = {
       vmute: 'VMUTE',
       ban: 'BAN',
       kick: 'KICK',
+      black: 'BLACKLIST',
     };
 
     const sub = args[0]?.toLowerCase();
@@ -356,6 +357,7 @@ const resons: Command = {
         vmute: 'VMUTE',
         ban: 'BAN',
         kick: 'KICK',
+        black: 'BLACKLIST',
       };
       const typeTokens: PunishApplicableType[] = [];
       const labelParts = parts.slice(1);

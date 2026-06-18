@@ -25,7 +25,7 @@ import type { PunishReason } from '../shared/punish-reasons.js';
 
 export type FlowPenaltyType = PenaltyType | 'KICK';
 
-const FLOW_TYPES = new Set<string>(['MUTE', 'PRISON', 'VMUTE', 'BAN', 'KICK']);
+const FLOW_TYPES = new Set<string>(['MUTE', 'PRISON', 'VMUTE', 'BAN', 'KICK', 'BLACKLIST']);
 
 function typeLabel(type: FlowPenaltyType): string {
   const labels: Record<string, string> = {
@@ -34,6 +34,7 @@ function typeLabel(type: FlowPenaltyType): string {
     VMUTE: 'كتم صوتي',
     BAN: 'حظر',
     KICK: 'طرد',
+    BLACKLIST: 'بلاك لست',
   };
   return labels[type] ?? type;
 }

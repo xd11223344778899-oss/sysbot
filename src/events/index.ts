@@ -10,6 +10,7 @@ import {
 } from 'discord.js';
 import { handleMessage } from '../core/command-parser.js';
 import { runAutoModeration, runAutoFeatures } from '../services/auto-moderation.js';
+import { runMessagePermissionGuard } from '../services/message-permission-guard.js';
 import { handleMemberJoin } from '../services/member-gate.js';
 import { sendLog } from '../services/log-service.js';
 import { formatExecutor, matchAuditEntry } from '../services/log-audit.js';
@@ -19,8 +20,9 @@ import {
 } from '../services/voice-log-classifier.js';
 import { handlePunishmentInteraction } from '../services/punishment-flow.js';
 import { onVmuteVoiceUpdate } from '../services/vmute-guard.js';
-import { syncTextMuteOnChannelCreate } from '../services/text-mute-overwrites.js';
-import { syncVerifyOnChannelCreate } from '../services/verify-overwrites.js';
+import { syncAllOverwritesOnChannelCreate } from '../services/channel-permissions.js';
+import { isTrusted, recordProtectionStrike } from '../services/trust-service.js';
+import { handleProtectionModal } from '../services/protection-panel.js';
 import {
   antiDeleteLog,
   antiPermsLog,
@@ -61,6 +63,8 @@ export function registerEvents(client: Client): void {
   client.on(Events.MessageCreate, async (message) => {
     if (!message.inGuild() || message.author.bot) return;
     try {
+      const guardRemoved = await runMessagePermissionGuard(message);
+      if (guardRemoved) return;
       const removed = await runAutoModeration(message);
       if (removed) return;
       await runAutoFeatures(message);
@@ -74,6 +78,7 @@ export function registerEvents(client: Client): void {
     try {
       if (interaction.isStringSelectMenu() || interaction.isModalSubmit()) {
         if (await handlePunishmentInteraction(interaction)) return;
+        if (interaction.isModalSubmit() && (await handleProtectionModal(interaction))) return;
       }
     } catch (err) {
       logger.error({ err }, 'interactionCreate handler error');
@@ -191,14 +196,9 @@ export function registerEvents(client: Client): void {
       ),
     );
     try {
-      await syncTextMuteOnChannelCreate(channel);
+      await syncAllOverwritesOnChannelCreate(channel);
     } catch (err) {
-      logger.warn({ err, channelId: channel.id }, 'text-mute sync on channel create failed');
-    }
-    try {
-      await syncVerifyOnChannelCreate(channel);
-    } catch (err) {
-      logger.warn({ err, channelId: channel.id }, 'verify sync on channel create failed');
+      logger.warn({ err, channelId: channel.id }, 'channel permission sync on create failed');
     }
   });
 
@@ -516,13 +516,6 @@ async function handleReactionRole(client: Client, reaction: any, userId: string,
   }
 }
 
-async function isTrusted(guildId: string, userId: string): Promise<boolean> {
-  const t = await prisma.trustEntry.findUnique({
-    where: { guildId_userId: { guildId, userId } },
-  });
-  return Boolean(t);
-}
-
 async function maybeAntiDelete(client: Client, guildId: string, type: 'channelDelete' | 'roleDelete') {
   const cfg = await getGuildConfig(guildId);
   if (!cfg.antiDelete) return;
@@ -538,6 +531,8 @@ async function maybeAntiDelete(client: Client, guildId: string, type: 'channelDe
   const executor = entry?.executor;
   if (!executor || executor.bot) return;
   if (await isTrusted(guildId, executor.id)) return;
+  const strike = await recordProtectionStrike(guildId, executor.id);
+  if (!strike.exceeded) return;
   const member = await guild.members.fetch(executor.id).catch(() => null);
   if (member && member.manageable) {
     await member.roles.set([]).catch(() => {});
@@ -562,6 +557,8 @@ async function maybeAntiPerms(client: Client, guildId: string, _roleId: string) 
   const executor = entry?.executor;
   if (!executor || executor.bot) return;
   if (await isTrusted(guildId, executor.id)) return;
+  const strike = await recordProtectionStrike(guildId, executor.id);
+  if (!strike.exceeded) return;
   const member = await guild.members.fetch(executor.id).catch(() => null);
   if (member && member.manageable) {
     await member.roles.set([]).catch(() => {});

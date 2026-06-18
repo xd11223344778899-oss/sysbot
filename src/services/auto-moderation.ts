@@ -2,6 +2,7 @@ import { PermissionFlagsBits, type Message } from 'discord.js';
 import { getGuildConfig } from '../database/guild-config.js';
 import { prisma } from '../database/prisma.js';
 import { applyPenalty } from './penalty-service.js';
+import { isTrusted } from './trust-service.js';
 
 const LINK_RE = /(https?:\/\/|www\.|discord\.gg\/)/i;
 
@@ -21,6 +22,7 @@ function isStaff(message: Message<true>): boolean {
 export async function runAutoModeration(message: Message<true>): Promise<boolean> {
   const cfg = await getGuildConfig(message.guildId);
   if (isStaff(message)) return false;
+  if (await isTrusted(message.guildId, message.author.id)) return false;
 
   if (cfg.antiLinks && LINK_RE.test(message.content)) {
     await message.delete().catch(() => {});

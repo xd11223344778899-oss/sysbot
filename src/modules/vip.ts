@@ -10,6 +10,8 @@ import type { Command } from '../types/command.js';
 import { baseEmbed, successEmbed, errorEmbed, infoEmbed, statusDone } from '../shared/embeds.js';
 import { runFullSetup } from '../services/setup-service.js';
 import { getGuildConfig } from '../database/guild-config.js';
+import { openProtectionPanel } from '../services/protection-panel.js';
+import { openInteractiveRolePanel } from '../services/interactive-role-panel.js';
 
 interface Section {
   id: string;
@@ -103,6 +105,19 @@ const SECTIONS: Section[] = [
         ),
   },
   {
+    id: 'interactive',
+    label: 'الرولات التفاعلية',
+    build: (p) =>
+      baseEmbed()
+        .setTitle('الرولات التفاعلية')
+        .setDescription(
+          [
+            'اضبط صلاحيات الرولات: صور، منشن، بث، ميوت سيرفر، دفن سيرفر، وأوامر إدارة.',
+            `اختر هذا القسم لفتح اللوحة، أو استخدم \`${p}iroles\`.`,
+          ].join('\n'),
+        ),
+  },
+  {
     id: 'protection',
     label: 'الحماية',
     build: (p) =>
@@ -110,10 +125,9 @@ const SECTIONS: Section[] = [
         .setTitle('الحماية')
         .setDescription(
           [
-            `\`${p}antidelete\`، \`${p}antiperms\`، \`${p}antibots\`، \`${p}antilinks\`.`,
-            `\`${p}antiword add <كلمة>\`، \`${p}spam <عدد> <ثواني>\`.`,
-            `\`${p}trustuser @user\`، \`${p}wanti @user\`، \`${p}createlimit <رقم>\`.`,
-            `\`${p}protection\` لعرض كل الحالات.`,
+            'لوحة تفاعلية لتشغيل/إيقاف الحماية وإدارة الوايت لست.',
+            `اختر هذا القسم لفتح اللوحة، أو \`${p}protection panel\`.`,
+            `أوامر نصية: \`${p}antidelete\`، \`${p}trustuser @user\`.`,
           ].join('\n'),
         ),
   },
@@ -197,6 +211,16 @@ const vip: Command = {
       if (interaction.componentType === ComponentType.StringSelect) {
         const section = SECTIONS.find((s) => s.id === interaction.values[0]);
         if (section) {
+          if (section.id === 'protection') {
+            await interaction.deferUpdate();
+            await openProtectionPanel(panel, guild, member.id);
+            return;
+          }
+          if (section.id === 'interactive') {
+            await interaction.deferUpdate();
+            await openInteractiveRolePanel(panel, guild, member.id);
+            return;
+          }
           await interaction.update({ embeds: [section.build(cfg.prefix)], components: buildComponents() });
         }
         return;

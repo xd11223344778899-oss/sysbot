@@ -66,8 +66,9 @@ docker compose up -d --build
 ## أول تشغيل في سيرفر
 
 1. أضف البوت بصلاحية Administrator (و**Mute Members** لتفعيل `vmute`).
-2. اكتب `!vip` ثم اضغط "تشغيل الإعداد الأولي" — سيُنشئ الرولات وقنوات اللوق ويطبّق صلاحيات الإسكات ويزرع أسباب العقوبات الافتراضية.
+2. اكتب `!vip` ثم اضغط "تشغيل الإعداد الأولي" — سيُنشئ الرولات (Muted، Prison، Blacklisted، Pic، Here، Live، …)، كاتيجوري **SysBot Restricted** مع قنوات البلاك والسجن، قنوات اللوق، وصلاحيات `@everyone` على كل القنوات.
 3. غيّر البرفكس عند الحاجة عبر `!setprefix` أو فعّل وضع بدون برفكس عبر `!setnprefix`.
+4. لإصلاح الصلاحيات بعد تغييرات يدوية: `!lsetup sync`.
 
 ## أسماء الأوامر البديلة
 
@@ -84,9 +85,9 @@ docker compose up -d --build
 
 ## قوائم أسباب العقوبات
 
-عند كتابة `mute @user` (أو `prison` / `vmute` / `ban` / `kick`) **بدون مدة أو سبب**، يظهر Embed مع قائمة Select Menu بالأسباب الجاهزة ومدة كل سبب. خيار «سبب مخصص» يفتح Modal للإدخال اليدوي.
+عند كتابة `mute @user` (أو `prison` / `black` / `vmute` / `ban` / `kick`) **بدون مدة أو سبب**، يظهر Embed مع قائمة Select Menu بالأسباب الجاهزة ومدة كل سبب. خيار «سبب مخصص» يفتح Modal للإدخال اليدوي. يمكن اختيار **دائم (بدون مدة)** عبر سبب `perm` أو خيار الدائم في القائمة.
 
-إدارة الأسباب: `resons add 30m سبام mute prison`، `resons list`، `resons edit`، `resons remove`.
+إدارة الأسباب: `resons add 30m سبام mute prison black`، `resons add perm مخالفة خطيرة black`، `resons list`، `resons edit`، `resons remove`.
 
 ## كتم صوتي (vmute)
 
@@ -98,13 +99,32 @@ docker compose up -d --build
 
 يُطبَّق رول Muted على صلاحيات كل القنوات عند الإعداد الأولي (`lsetup`). لإصلاح صلاحيات خاطئة (مثل Speak) دون تكرار اللوقات: `!lsetup sync`.
 
+## بلاك لست وسجن
+
+- **`black @user`** — يمنح رول **Blacklisted** ويخفي العضو عن كل القنوات ما عدا `black-text` و`black-voice` في كاتيجوري Restricted.
+- **`prison @user`** — يمنح رول **Prison** ويخفي العضو عن كل القنوات ما عدا `prison-text` و`prison-voice`.
+- **`unblack` / `unprison`** — يرفع العقوبة ويزيل الرول.
+- العقوبات المؤقتة تُرفع تلقائياً عند انتهاء المدة (مثل mute).
+
+## صلاحيات Pic / Here / Live
+
+بعد `lsetup`، يُطبَّق على `@everyone` في القنوات النصية: منع المرفقات والإمبد والمنشن الجماعي؛ وفي الصوت: منع البث (Go Live). الرولات **Pic**، **Here**، **Live** تمنح الاستثناء المناسب. طبقة إضافية تحذف الرسائل المخالفة تلقائياً (مع احترام الوايت لست و`ManageMessages`).
+
+## الرولات التفاعلية
+
+`iroles` (أو `رولات`) أو قسم **الرولات التفاعلية** في `vip` — لوحة متعددة الصفحات لاختيار رولات السيرفر وضبط: صور، منشن، بث، ميوت سيرفر، دفن سيرفر، وأوامر إدارة مسموحة. عند «انتهيت» تُحفظ الإعدادات وتُطبَّق صلاحيات Discord والـ overwrites.
+
+## لوحة الحماية
+
+`protection panel` أو قسم **الحماية** في `vip` — تبديل antidelete/antiperms/antibots/antilinks/antiword، إعداد السبام، عرض الوايت لست والكلمات المحظورة. الوايت لست (`trustuser` / `wanti`) تُحترم في كل فحوصات الحماية بما فيها الروابط والسبام. `createlimit` يحدد عدد المخالفات قبل سحب الرولات عند antidelete/antiperms.
+
 ## البنية
 
 ```
 src/
   core/        محرك الأوامر: parser, registry, permission engine
   database/    Prisma (SQLite) client + خدمة إعدادات السيرفر
-  services/    setup, penalties, penalty-scheduler, role-bulk, logging, member gate, auto-moderation
+  services/    setup, channel-permissions, restricted-channels, penalties, interactive-role-panel, protection-panel, trust-service, message-permission-guard, logging, member gate, auto-moderation
   events/      مستمعو أحداث Discord (لوقات، حماية، بوابة الأعضاء)
   modules/     الأوامر مقسّمة حسب الفئة (كل ملف يصدّر مصفوفة أوامر)
   shared/      ثوابت، إمبدات، مُحلِّلات وسائط، أنواع

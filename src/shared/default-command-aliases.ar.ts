@@ -88,6 +88,7 @@ export const DEFAULT_ARABIC_ALIASES: Record<string, string> = {
   reactrole: 'رولتفاعل',
   unnew: 'فكجديد',
   verify: 'فعل',
+  iroles: 'رولات',
   antidelete: 'منعحذف',
   antilinks: 'منعرابط',
   antiperms: 'منعصلاحيات',

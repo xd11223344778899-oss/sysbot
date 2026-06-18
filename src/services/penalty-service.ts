@@ -5,9 +5,12 @@ import { getGuildConfig } from '../database/guild-config.js';
 import { logger } from '../logger.js';
 import { markVmuteLifted } from './vmute-guard.js';
 
-const ROLE_KEY: Partial<Record<PenaltyType, 'mutedRoleId' | 'prisonRoleId'>> = {
+const ROLE_KEY: Partial<
+  Record<PenaltyType, 'mutedRoleId' | 'prisonRoleId' | 'blacklistedRoleId'>
+> = {
   MUTE: 'mutedRoleId',
   PRISON: 'prisonRoleId',
+  BLACKLIST: 'blacklistedRoleId',
 };
 
 export interface ApplyPenaltyInput {
@@ -43,14 +46,18 @@ export async function applyPenalty({
         throw new Error('VMUTE_FAILED');
       }
     }
-  } else if (type === 'MUTE' || type === 'PRISON') {
+  } else if (type === 'MUTE' || type === 'PRISON' || type === 'BLACKLIST') {
     const cfg = await getGuildConfig(guildId);
     const roleKey = ROLE_KEY[type];
     if (!roleKey) throw new Error('ROLE_NOT_CONFIGURED');
     const roleId = cfg[roleKey];
     if (!roleId) throw new Error('ROLE_NOT_CONFIGURED');
     const auditReason =
-      type === 'MUTE' ? reason ?? 'SysBot: إسكات كتابي' : reason ?? 'SysBot: سجن';
+      type === 'MUTE'
+        ? reason ?? 'SysBot: إسكات كتابي'
+        : type === 'PRISON'
+          ? reason ?? 'SysBot: سجن'
+          : reason ?? 'SysBot: بلاك لست';
     await member.roles.add(roleId, auditReason);
   } else {
     const cfg = await getGuildConfig(guildId);

@@ -29,17 +29,28 @@ model Guild {
   modCategory String?
 
   // System role ids created during setup
-  mutedRoleId      String?
-  prisonRoleId     String?
-  vmuteRoleId      String?
-  newRoleId        String?
-  unverifiedRoleId String?
+  mutedRoleId        String?
+  prisonRoleId       String?
+  vmuteRoleId        String?
+  newRoleId          String?
+  unverifiedRoleId   String?
+  blacklistedRoleId  String?
 
-  // Special / decorative roles
+  // Special / decorative roles (also auto-created on setup)
   picRoleId   String?
   hereRoleId  String?
   liveRoleId  String?
   autoRoleIds String  @default("[]") // JSON string[]
+
+  // Restricted category + channels (black / prison)
+  restrictedCategoryId String?
+  blackChannelId       String?
+  blackVoiceId         String?
+  prisonChannelId      String?
+  prisonVoiceId        String?
+
+  // When true, deny pic/here/live on @everyone guild-wide
+  decorBaselineEnabled Boolean @default(true)
 
   // Channels used by member-gating systems
   newChannelId    String?
@@ -112,6 +123,7 @@ model Guild {
   punishPerms     PunishPerm[]
   antiCollections AntiCollection[]
   commandAliases  CommandAlias[]
+  interactiveRoles InteractiveRole[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -320,4 +332,22 @@ model AntiCollection {
   data    String @default("{}") // JSON object
 
   @@unique([guildId, name])
+}
+
+// Per-role interactive permissions (pic/here/live/mute/deafen/admin commands).
+model InteractiveRole {
+  id              String  @id @default(cuid())
+  guild           Guild   @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  guildId         String
+  roleId          String
+  sortOrder       Int     @default(0)
+  attachFiles     Boolean @default(false)
+  mentionEveryone Boolean @default(false)
+  stream          Boolean @default(false)
+  muteMembers     Boolean @default(false)
+  deafenMembers   Boolean @default(false)
+  allowedCommands String  @default("[]") // JSON string[]
+
+  @@unique([guildId, roleId])
+  @@index([guildId])
 }

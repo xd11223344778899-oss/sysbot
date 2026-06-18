@@ -20,6 +20,7 @@ const PENALTY_LOG_TITLE: Partial<Record<PenaltyType, string>> = {
   PRISON: 'سجن',
   VMUTE: 'كتم صوتي',
   BAN: 'حظر',
+  BLACKLIST: 'بلاك لست',
 };
 
 const LIFT_LOG_TITLE: Partial<Record<PenaltyType, string>> = {
@@ -27,6 +28,7 @@ const LIFT_LOG_TITLE: Partial<Record<PenaltyType, string>> = {
   PRISON: 'فك سجن',
   VMUTE: 'فك كتم صوتي',
   BAN: 'فك حظر',
+  BLACKLIST: 'فك بلاك لست',
 };
 
 async function resolveTargetAndReason(ctx: CommandContext) {
@@ -574,7 +576,7 @@ function makeListPenaltyCommand(name: string, type: PenaltyType, description: st
   };
 }
 
-const black = makeListPenaltyCommand('black', 'BLACKLIST', 'Blacklist user from server', 'إضافة للبلاك');
+const black = makePenaltyCommand('black', 'BLACKLIST', 'Blacklist user from server', 'تم إضافة للبلاك');
 const block = makeListPenaltyCommand('block', 'BLOCK', 'block user from role', 'حظر من الرول');
 
 function makeUnlistCommand(name: string, type: PenaltyType, description: string, verb: string): Command {
@@ -599,7 +601,7 @@ function makeUnlistCommand(name: string, type: PenaltyType, description: string,
   };
 }
 
-const unblack = makeUnlistCommand('unblack', 'BLACKLIST', 'Un blacklist user', 'إزالة من البلاك');
+const unblack = makeLiftCommand('unblack', 'BLACKLIST', 'Un blacklist user', 'تم فك البلاك');
 const unblock = makeUnlistCommand('unblock', 'BLOCK', 'Un block user', 'فك الحظر من الرول');
 
 export const moderationCommands: Command[] = [

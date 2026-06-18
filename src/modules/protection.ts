@@ -4,6 +4,8 @@ import { successEmbed, errorEmbed, baseEmbed, statusOnOff } from '../shared/embe
 import { resolveMember } from '../shared/resolvers.js';
 import { prisma } from '../database/prisma.js';
 import { getGuildConfig, updateGuildConfig } from '../database/guild-config.js';
+import { openProtectionPanel } from '../services/protection-panel.js';
+import { toggleTrustEntry, listTrustedUsers } from '../services/trust-service.js';
 
 function makeToggleCommand(
   name: string,
@@ -149,16 +151,16 @@ const trustuser: Command = {
       await message.reply({ embeds: [errorEmbed('حدد عضو صحيح.')] });
       return;
     }
-    const existing = await prisma.trustEntry.findUnique({
-      where: { guildId_userId: { guildId: guild.id, userId: target.id } },
+    const added = await toggleTrustEntry(guild.id, target.id);
+    await message.reply({
+      embeds: [
+        successEmbed(
+          added
+            ? `تمت إضافة ${target} للوايت لست.`
+            : `تمت إزالة ${target} من الوايت لست.`,
+        ),
+      ],
     });
-    if (existing) {
-      await prisma.trustEntry.delete({ where: { id: existing.id } });
-      await message.reply({ embeds: [successEmbed(`تم إزالة ${target} من قائمة الموثوقين.`)] });
-    } else {
-      await prisma.trustEntry.create({ data: { guildId: guild.id, userId: target.id } });
-      await message.reply({ embeds: [successEmbed(`تمت إضافة ${target} لقائمة الموثوقين.`)] });
-    }
   },
 };
 
@@ -168,12 +170,12 @@ const trustlist: Command = {
   category: 'protection',
   permission: 'mod',
   async execute({ message, guild }) {
-    const entries = await prisma.trustEntry.findMany({ where: { guildId: guild.id } });
+    const entries = await listTrustedUsers(guild.id);
     await message.reply({
       embeds: [
         baseEmbed()
           .setTitle('قائمة الموثوقين')
-          .setDescription(entries.map((e) => `<@${e.userId}>`).join('\n') || 'لا يوجد'),
+          .setDescription(entries.map((id) => `<@${id}>`).join('\n') || 'لا يوجد'),
       ],
     });
   },
@@ -201,7 +203,12 @@ const protection: Command = {
   description: 'Set protection settings',
   category: 'protection',
   permission: 'admin',
-  async execute({ message, guild }) {
+  usage: '[panel]',
+  async execute({ message, guild, member, args }) {
+    if (args[0]?.toLowerCase() === 'panel') {
+      await openProtectionPanel(message, guild, member.id);
+      return;
+    }
     const cfg = await getGuildConfig(guild.id);
     await message.reply({
       embeds: [
@@ -233,12 +240,12 @@ function makeWantiCommand(name: string, description: string): Command {
     usage: name === 'wanti' ? '<@user>' : '',
     async execute({ message, guild, args }) {
       if (name === 'wantilist') {
-        const entries = await prisma.trustEntry.findMany({ where: { guildId: guild.id } });
+        const entries = await listTrustedUsers(guild.id);
         await message.reply({
           embeds: [
             baseEmbed()
-              .setTitle('المصرّح لهم بحذف الرولات/القنوات')
-              .setDescription(entries.map((e) => `<@${e.userId}>`).join('\n') || 'لا يوجد'),
+              .setTitle('الوايت لست')
+              .setDescription(entries.map((id) => `<@${id}>`).join('\n') || 'لا يوجد'),
           ],
         });
         return;
@@ -248,16 +255,16 @@ function makeWantiCommand(name: string, description: string): Command {
         await message.reply({ embeds: [errorEmbed('حدد عضو صحيح.')] });
         return;
       }
-      const existing = await prisma.trustEntry.findUnique({
-        where: { guildId_userId: { guildId: guild.id, userId: target.id } },
+      const added = await toggleTrustEntry(guild.id, target.id);
+      await message.reply({
+        embeds: [
+          successEmbed(
+            added
+              ? `تمت إضافة ${target} للوايت لست.`
+              : `تمت إزالة ${target} من الوايت لست.`,
+          ),
+        ],
       });
-      if (existing) {
-        await prisma.trustEntry.delete({ where: { id: existing.id } });
-        await message.reply({ embeds: [successEmbed(`تم منع ${target} من حذف الرولات/القنوات.`)] });
-      } else {
-        await prisma.trustEntry.create({ data: { guildId: guild.id, userId: target.id } });
-        await message.reply({ embeds: [successEmbed(`تم السماح لـ ${target} بحذف الرولات/القنوات.`)] });
-      }
     },
   };
 }

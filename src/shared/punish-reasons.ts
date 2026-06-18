@@ -15,31 +15,37 @@ export const DEFAULT_PUNISH_REASONS: PunishReason[] = [
     id: 'spam',
     label: 'سبام',
     durationMs: 30 * 60_000,
-    types: ['MUTE', 'PRISON', 'VMUTE'],
+    types: ['MUTE', 'PRISON', 'VMUTE', 'BLACKLIST'],
   },
   {
     id: 'disturb',
     label: 'إزعاج',
     durationMs: 60 * 60_000,
-    types: ['MUTE', 'PRISON', 'VMUTE'],
+    types: ['MUTE', 'PRISON', 'VMUTE', 'BLACKLIST'],
   },
   {
     id: 'profanity',
     label: 'ألفاظ غير لائقة',
     durationMs: 2 * 60 * 60_000,
-    types: ['MUTE', 'PRISON', 'VMUTE'],
+    types: ['MUTE', 'PRISON', 'VMUTE', 'BLACKLIST'],
   },
   {
     id: 'ads',
     label: 'إعلان',
     durationMs: 24 * 60 * 60_000,
-    types: ['MUTE', 'PRISON', 'BAN'],
+    types: ['MUTE', 'PRISON', 'BAN', 'BLACKLIST'],
   },
   {
     id: 'rules',
     label: 'مخالفة القوانين',
     durationMs: 60 * 60_000,
-    types: ['MUTE', 'PRISON', 'VMUTE', 'BAN', 'KICK'],
+    types: ['MUTE', 'PRISON', 'VMUTE', 'BAN', 'KICK', 'BLACKLIST'],
+  },
+  {
+    id: 'permanent',
+    label: 'دائم',
+    durationMs: null,
+    types: ['BLACKLIST', 'PRISON', 'MUTE', 'BAN'],
   },
 ];
 

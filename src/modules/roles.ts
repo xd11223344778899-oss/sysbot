@@ -7,6 +7,7 @@ import { updateGuildConfig } from '../database/guild-config.js';
 import { runRoleMulti, isRoleBulkRunning, type RoleScope } from '../services/role-bulk.js';
 import { completeMemberVerification } from '../services/member-gate.js';
 import { logModerationAction } from '../services/log-service.js';
+import { openInteractiveRolePanel } from '../services/interactive-role-panel.js';
 
 const role: Command = {
   name: 'role',
@@ -356,6 +357,16 @@ const verify: Command = {
   },
 };
 
+const iroles: Command = {
+  name: 'iroles',
+  description: 'Open interactive roles configuration panel',
+  category: 'roles',
+  permission: 'admin',
+  async execute({ message, guild, member }) {
+    await openInteractiveRolePanel(message, guild, member.id);
+  },
+};
+
 export const roleCommands: Command[] = [
   role,
   rolemulti,
@@ -372,4 +383,5 @@ export const roleCommands: Command[] = [
   reactrole,
   unnew,
   verify,
+  iroles,
 ];

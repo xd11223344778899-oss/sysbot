@@ -11,6 +11,14 @@ import { ensureDefaultPunishReasons } from './punish-reasons-service.js';
 import { parsePunishReasons } from '../shared/punish-reasons.js';
 import { applyTextMuteOverwritesToGuild } from './text-mute-overwrites.js';
 import { applyUnverifiedOverwritesToGuild } from './verify-overwrites.js';
+import { ensureRestrictedSetup } from './restricted-channels.js';
+import {
+  applyAllOverwritesToGuild,
+  buildPermissionContext,
+  formatPermStats,
+  mergePermStats,
+  type PermSyncStats,
+} from './channel-permissions.js';
 import { SYSTEM_ROLES, LOG_EVENTS, CATEGORY_NAMES } from '../shared/constants.js';
 import { logger } from '../logger.js';
 
@@ -33,6 +41,7 @@ export interface SetupSyncResult {
   verifyOverwritesApplied: number;
   verifyOverwritesFixed: number;
   verifyOverwritesOk: number;
+  permStats: PermSyncStats;
   punishReasonsSeeded: boolean;
 }
 
@@ -160,6 +169,13 @@ async function persistSetup(
   logCategory: CategoryChannel,
   modCategory: CategoryChannel,
   logChannelRows: { eventType: string; channelId: string }[],
+  restricted?: {
+    restrictedCategoryId: string;
+    blackChannelId: string;
+    blackVoiceId: string;
+    prisonChannelId: string;
+    prisonVoiceId: string;
+  },
 ): Promise<void> {
   await prisma.guild.update({
     where: { id: guild.id },
@@ -168,6 +184,7 @@ async function persistSetup(
       setupDone: true,
       logCategory: logCategory.id,
       modCategory: modCategory.id,
+      ...(restricted ?? {}),
     },
   });
 
@@ -211,12 +228,21 @@ export async function runFullSetup(guild: Guild): Promise<SetupProgress> {
   progress.logChannelsCreated = created;
 
   const mutedId = roleUpdates[SYSTEM_ROLES.muted.key];
+  const blackId = roleUpdates[SYSTEM_ROLES.blacklisted.key];
+  const prisonId = roleUpdates[SYSTEM_ROLES.prison.key];
+
+  const restricted = await ensureRestrictedSetup(guild, blackId, prisonId);
+
   const muteStats = await applyTextMuteOverwritesToGuild(guild, mutedId, {
     logCategoryId: logCategory.id,
   });
   progress.overwritesApplied = muteStats.applied + muteStats.fixed;
 
-  await persistSetup(guild, roleUpdates, logCategory, modCategory, logChannelRows);
+  const permCtx = await buildPermissionContext(guild.id);
+  const permStats = await applyAllOverwritesToGuild(guild, permCtx);
+  progress.overwritesApplied += permStats.applied + permStats.fixed;
+
+  await persistSetup(guild, roleUpdates, logCategory, modCategory, logChannelRows, restricted);
   await ensureDefaultPunishReasons(guild.id);
   logger.info({ guild: guild.id, progress }, 'Full setup complete');
   return progress;
@@ -243,6 +269,7 @@ export async function runSetupSync(guild: Guild): Promise<SetupSyncResult> {
     verifyOverwritesApplied: 0,
     verifyOverwritesFixed: 0,
     verifyOverwritesOk: 0,
+    permStats: { applied: 0, fixed: 0, unchanged: 0, skipped: 0 },
     punishReasonsSeeded: false,
   };
 
@@ -280,6 +307,11 @@ export async function runSetupSync(guild: Guild): Promise<SetupSyncResult> {
   result.logChannelsOk = ok;
 
   const mutedId = roleUpdates[SYSTEM_ROLES.muted.key];
+  const blackId = roleUpdates[SYSTEM_ROLES.blacklisted.key];
+  const prisonId = roleUpdates[SYSTEM_ROLES.prison.key];
+
+  const restricted = await ensureRestrictedSetup(guild, blackId, prisonId);
+
   const muteStats = await applyTextMuteOverwritesToGuild(guild, mutedId, {
     logCategoryId: logCategory.id,
   });
@@ -301,7 +333,12 @@ export async function runSetupSync(guild: Guild): Promise<SetupSyncResult> {
     }
   }
 
-  await persistSetup(guild, roleUpdates, logCategory, modCategory, logChannelRows);
+  await persistSetup(guild, roleUpdates, logCategory, modCategory, logChannelRows, restricted);
+  invalidateGuildConfig(guild.id);
+
+  const permCtx = await buildPermissionContext(guild.id);
+  const permStats = await applyAllOverwritesToGuild(guild, permCtx);
+  mergePermStats(result.permStats, permStats);
 
   const beforeReasons = parsePunishReasons(cfg?.punishReasons);
   await ensureDefaultPunishReasons(guild.id);
@@ -346,6 +383,7 @@ export function formatSetupSyncReport(result: SetupSyncResult): string {
         (result.verifyOverwritesApplied ? `، ${result.verifyOverwritesApplied} أُضيفت` : ''),
     );
   }
+  lines.push(formatPermStats('صلاحيات القنوات والرولات', result.permStats));
   if (result.punishReasonsSeeded) {
     lines.push('تم زرع أسباب العقوبات الافتراضية.');
   }
