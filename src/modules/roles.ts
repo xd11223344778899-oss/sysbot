@@ -4,7 +4,8 @@ import { successEmbed, errorEmbed, baseEmbed } from '../shared/embeds.js';
 import { resolveMember, resolveRole } from '../shared/resolvers.js';
 import { prisma } from '../database/prisma.js';
 import { updateGuildConfig } from '../database/guild-config.js';
-import { runRoleMulti, isRoleBulkRunning, type RoleScope } from '../services/role-bulk.js';
+import { runRoleMulti, type RoleScope } from '../services/role-bulk.js';
+import { tryRunHeavyJob, isHeavyJobRunning } from '../services/heavy-job-queue.js';
 import { completeMemberVerification } from '../services/member-gate.js';
 import { logModerationAction } from '../services/log-service.js';
 import { openInteractiveRolePanel } from '../services/interactive-role-panel.js';
@@ -44,8 +45,8 @@ const rolemulti: Command = {
       await message.reply({ embeds: [errorEmbed('حدد رول صحيح.')] });
       return;
     }
-    if (isRoleBulkRunning(guild.id)) {
-      await message.reply({ embeds: [errorEmbed('توجد عملية رول جماعية قيد التنفيذ بالفعل.')] });
+    if (isHeavyJobRunning(guild.id)) {
+      await message.reply({ embeds: [errorEmbed('توجد عملية ثقيلة قيد التنفيذ بالفعل.')] });
       return;
     }
     const scope = (['all', 'members', 'bots'].includes(args[1]) ? args[1] : 'all') as RoleScope;
@@ -53,11 +54,15 @@ const rolemulti: Command = {
     const status = await message.reply({
       embeds: [successEmbed(`بدأ ${remove ? 'سحب' : 'إعطاء'} ${r} لـ (${scope})، سيكتمل تدريجياً.`)],
     });
-    runRoleMulti(client, { guildId: guild.id, roleId: r.id, scope, remove })
-      .then((count) =>
-        status.edit({ embeds: [successEmbed(`اكتمل ${remove ? 'السحب' : 'الإعطاء'} على ${count} عضو.`)] }).catch(() => {}),
-      )
-      .catch(() => {});
+    const started = await tryRunHeavyJob(guild.id, async () => {
+      const count = await runRoleMulti(client, { guildId: guild.id, roleId: r.id, scope, remove });
+      await status
+        .edit({ embeds: [successEmbed(`اكتمل ${remove ? 'السحب' : 'الإعطاء'} على ${count} عضو.`)] })
+        .catch(() => {});
+    });
+    if (!started) {
+      await status.edit({ embeds: [errorEmbed('توجد عملية ثقيلة قيد التنفيذ.')] }).catch(() => {});
+    }
   },
 };
 

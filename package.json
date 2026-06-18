@@ -9,11 +9,13 @@
   },
   "scripts": {
     "build": "prisma generate && tsc -p tsconfig.json",
-    "start": "prisma db push --skip-generate && node dist/index.js",
-    "start:prod": "prisma db push --skip-generate && node dist/index.js",
-    "dev": "prisma db push --skip-generate && tsx watch src/index.ts",
+    "start": "prisma migrate deploy && node dist/index.js",
+    "start:prod": "prisma migrate deploy && node dist/index.js",
+    "dev": "prisma migrate deploy && tsx watch src/index.ts",
     "db:push": "prisma db push",
+    "db:migrate": "prisma migrate deploy",
     "db:studio": "prisma studio",
+    "migrate:sqlite-to-pg": "tsx scripts/migrate-sqlite-to-postgres.ts",
     "postinstall": "prisma generate",
     "lint": "tsc --noEmit"
   },
@@ -26,7 +28,9 @@
     "prisma": "^5.22.0"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "^7.6.12",
     "@types/node": "^22.10.2",
+    "better-sqlite3": "^11.7.0",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2"
   }

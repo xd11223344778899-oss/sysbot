@@ -3,6 +3,10 @@ import { getGuildConfig } from '../database/guild-config.js';
 import { prisma } from '../database/prisma.js';
 import { applyPenalty } from './penalty-service.js';
 import { isTrusted } from './trust-service.js';
+import {
+  isAutoLineSuspended,
+  markBotLineSent,
+} from './spam-intelligence.js';
 
 const LINK_RE = /(https?:\/\/|www\.|discord\.gg\/)/i;
 
@@ -21,6 +25,7 @@ function isStaff(message: Message<true>): boolean {
  */
 export async function runAutoModeration(message: Message<true>): Promise<boolean> {
   const cfg = await getGuildConfig(message.guildId);
+
   if (isStaff(message)) return false;
   if (await isTrusted(message.guildId, message.author.id)) return false;
 
@@ -73,6 +78,10 @@ export async function runAutoFeatures(message: Message<true>): Promise<void> {
     await message.react(cfg.reactEmoji).catch(() => {});
   }
   if (cfg.autoLine && message.channel.isTextBased() && 'send' in message.channel) {
-    await message.channel.send('━━━━━━━━━━━━━━━━━━').catch(() => {});
+    const suspended = await isAutoLineSuspended(message.guildId, message.channelId);
+    if (!suspended) {
+      await message.channel.send('━━━━━━━━━━━━━━━━━━').catch(() => {});
+      markBotLineSent(message.guildId, message.channelId);
+    }
   }
 }

@@ -3,10 +3,10 @@ generator client {
   binaryTargets = ["native", "debian-openssl-3.0.x"]
 }
 
-// Local, zero-config SQLite database. The file lives in the project `data/`
-// folder by default and can be pointed at a Railway volume in production.
+// PostgreSQL (Docker locally, Railway Postgres in production).
+// Legacy SQLite can be migrated via: npm run migrate:sqlite-to-pg
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
@@ -123,10 +123,26 @@ model Guild {
   punishPerms     PunishPerm[]
   antiCollections AntiCollection[]
   commandAliases  CommandAlias[]
-  interactiveRoles InteractiveRole[]
+  interactiveRoles   InteractiveRole[]
+  channelStressStates ChannelStressState[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+// Per-channel spam stress / autoLine suspension (survives restarts).
+model ChannelStressState {
+  id                     String    @id @default(cuid())
+  guild                  Guild     @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  guildId                String
+  channelId              String
+  autoLineSuspendedUntil DateTime?
+  lastConfidence         Float     @default(0)
+  suspendCount           Int       @default(0)
+  updatedAt              DateTime  @updatedAt
+
+  @@unique([guildId, channelId])
+  @@index([guildId])
 }
 
 // One channel per logged event type (detailed) or shared (compact).

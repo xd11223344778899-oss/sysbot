@@ -5,6 +5,7 @@ import {
   runSetupSync,
   formatSetupSyncReport,
 } from '../services/setup-service.js';
+import { tryRunHeavyJob, isHeavyJobRunning } from '../services/heavy-job-queue.js';
 import { prisma } from '../database/prisma.js';
 import { updateGuildConfig } from '../database/guild-config.js';
 import { LOG_EVENTS } from '../shared/constants.js';
@@ -19,16 +20,25 @@ const lsetup: Command = {
     const mode = args[0]?.toLowerCase();
 
     if (mode === 'sync') {
+      if (isHeavyJobRunning(guild.id)) {
+        await message.reply({ embeds: [errorEmbed('يوجد عملية ثقيلة قيد التنفيذ في هذا السيرفر. انتظر.')] });
+        return;
+      }
       const status = await message.reply({
-        embeds: [infoEmbed('جارٍ التحقق من الإعداد وإصلاح النواقص وصلاحيات رول Muted. يرجى الانتظار.')],
+        embeds: [infoEmbed('جارٍ التحقق من الإعداد وإصلاح النواقص. يرجى الانتظار.')],
       });
-      try {
-        const result = await runSetupSync(guild);
-        await status.edit({ embeds: [successEmbed(formatSetupSyncReport(result))] });
-      } catch {
-        await status.edit({
-          embeds: [errorEmbed('فشل المزامنة. تأكد أن البوت يملك صلاحية الإدارة.')],
-        });
+      const started = await tryRunHeavyJob(guild.id, async () => {
+        try {
+          const result = await runSetupSync(guild);
+          await status.edit({ embeds: [successEmbed(formatSetupSyncReport(result))] });
+        } catch {
+          await status.edit({
+            embeds: [errorEmbed('فشل المزامنة. تأكد أن البوت يملك صلاحية الإدارة.')],
+          });
+        }
+      });
+      if (!started) {
+        await status.edit({ embeds: [errorEmbed('يوجد عملية ثقيلة قيد التنفيذ.')] });
       }
       return;
     }
@@ -43,11 +53,20 @@ const lsetup: Command = {
         ),
       ],
     });
-    try {
-      const created = await setupLogs(guild);
-      await status.edit({ embeds: [successEmbed(`تم الإعداد. عدد قنوات اللوق الجديدة: ${created}.`)] });
-    } catch {
-      await status.edit({ embeds: [errorEmbed('فشل الإعداد. تأكد أن البوت يملك صلاحية الإدارة.')] });
+    if (isHeavyJobRunning(guild.id)) {
+      await status.edit({ embeds: [errorEmbed('يوجد عملية ثقيلة قيد التنفيذ.')] });
+      return;
+    }
+    const started = await tryRunHeavyJob(guild.id, async () => {
+      try {
+        const created = await setupLogs(guild);
+        await status.edit({ embeds: [successEmbed(`تم الإعداد. عدد قنوات اللوق الجديدة: ${created}.`)] });
+      } catch {
+        await status.edit({ embeds: [errorEmbed('فشل الإعداد. تأكد أن البوت يملك صلاحية الإدارة.')] });
+      }
+    });
+    if (!started) {
+      await status.edit({ embeds: [errorEmbed('يوجد عملية ثقيلة قيد التنفيذ.')] });
     }
   },
 };
@@ -90,12 +109,22 @@ const lremove: Command = {
   category: 'logging',
   permission: 'admin',
   async execute({ message, guild }) {
-    const rows = await prisma.guildLogChannel.findMany({ where: { guildId: guild.id } });
-    for (const row of rows) {
-      await guild.channels.delete(row.channelId).catch(() => {});
+    if (isHeavyJobRunning(guild.id)) {
+      await message.reply({ embeds: [errorEmbed('يوجد عملية ثقيلة قيد التنفيذ.')] });
+      return;
     }
-    await prisma.guildLogChannel.deleteMany({ where: { guildId: guild.id } });
-    await message.reply({ embeds: [successEmbed('تم حذف جميع قنوات اللوق.')] });
+    const status = await message.reply({ embeds: [infoEmbed('جارٍ حذف قنوات اللوق...')] });
+    const started = await tryRunHeavyJob(guild.id, async () => {
+      const rows = await prisma.guildLogChannel.findMany({ where: { guildId: guild.id } });
+      for (const row of rows) {
+        await guild.channels.delete(row.channelId).catch(() => {});
+      }
+      await prisma.guildLogChannel.deleteMany({ where: { guildId: guild.id } });
+      await status.edit({ embeds: [successEmbed('تم حذف جميع قنوات اللوق.')] });
+    });
+    if (!started) {
+      await status.edit({ embeds: [errorEmbed('يوجد عملية ثقيلة قيد التنفيذ.')] });
+    }
   },
 };
 

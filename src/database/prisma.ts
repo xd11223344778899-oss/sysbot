@@ -4,9 +4,6 @@ import { PrismaClient } from '@prisma/client';
 import { config } from '../config.js';
 import { logger } from '../logger.js';
 
-// Ensure the SQLite directory exists before the client opens the file.
-// Prisma resolves relative SQLite paths against the prisma/ schema folder, so
-// we mirror that here (the process runs from the project root).
 function ensureSqliteDir(url: string): void {
   if (!url.startsWith('file:')) return;
   const raw = url.slice('file:'.length);
@@ -17,13 +14,22 @@ function ensureSqliteDir(url: string): void {
   }
 }
 
-ensureSqliteDir(config.databaseUrl);
+if (config.databaseUrl?.startsWith('file:')) {
+  ensureSqliteDir(config.databaseUrl);
+}
 
 export const prisma = new PrismaClient();
 
+export function databaseKind(): 'postgresql' | 'sqlite' | 'other' {
+  const url = config.databaseUrl ?? '';
+  if (url.startsWith('postgresql://') || url.startsWith('postgres://')) return 'postgresql';
+  if (url.startsWith('file:')) return 'sqlite';
+  return 'other';
+}
+
 export async function connectDatabase(): Promise<void> {
   await prisma.$connect();
-  logger.info('Connected to local database');
+  logger.info({ kind: databaseKind() }, 'Connected to database');
 }
 
 export async function disconnectDatabase(): Promise<void> {

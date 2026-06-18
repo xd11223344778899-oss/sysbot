@@ -7,52 +7,49 @@
 ## المتطلبات
 
 - Node.js 20+
-- لا حاجة لأي خدمة خارجية: قاعدة البيانات محلية (SQLite، ملف واحد) ولا يوجد Redis.
+- **PostgreSQL** (محلياً عبر Docker Compose، أو Railway Postgres في الإنتاج)
 - تطبيق بوت في Discord مع تفعيل الـ Privileged Intents: `Server Members`, `Message Content`, `Presence`.
 
-## الإعداد المحلي (هذا الجهاز)
+## الإعداد المحلي (Docker + Postgres)
 
 ```bash
 cp .env.example .env
-# املأ DISCORD_TOKEN و GLOBAL_OWNERS فقط
+# املأ DISCORD_TOKEN و GLOBAL_OWNERS و DEVELOPER_ID
 
-npm install            # يولّد عميل Prisma تلقائياً (postinstall)
-npm run dev            # ينشئ/يحدّث قاعدة البيانات ثم يشغّل البوت
+docker compose up -d --build
 ```
 
-قاعدة البيانات تُنشأ تلقائياً كملف في `data/sysbot.db`. لا تحتاج تثبيت أي قاعدة بيانات.
-
-للتشغيل بدون مراقبة التغييرات:
+أو للتطوير بدون Docker:
 
 ```bash
-npm run build
-npm start
+npm install
+# شغّل Postgres محلياً واضبط DATABASE_URL في .env
+npm run dev
 ```
 
-أدوات مساعدة: `npm run db:studio` لتصفّح البيانات، `npm run db:push` لمزامنة السكيما.
+`npm run dev` / `npm start` يستخدمان `prisma migrate deploy` — البيانات **لا تُمسح** عند إعادة تشغيل البوت.
+
+### ترحيل من SQLite القديم (مرة واحدة)
+
+```bash
+SQLITE_SOURCE_URL=file:../data/sysbot.db DATABASE_URL=postgresql://... npm run migrate:sqlite-to-pg
+```
+
+أدوات مساعدة: `npm run db:studio`، `npm run db:migrate`.
 
 ## النشر على Railway
 
-1. اربط المستودع على GitHub بمشروع Railway (New Project → Deploy from GitHub → اختر `sysbot`).
-2. Railway يبني عبر [Dockerfile](Dockerfile) (`npm run build`) ثم يشغّل `npm run start:prod` (ينشئ/يحدّث SQLite على Volume ثم يشغّل البوت).
-3. أضف **Volume** على المسار `/data` (إلزامي — بدونه تُفقد الإعدادات عند كل deploy). لا تستخدم `VOLUME` في Dockerfile؛ Railway يوفّر Volumes من لوحة التحكم فقط.
-4. اضبط متغيرات البيئة:
+دليل مفصّل: **[RAILWAY.md](RAILWAY.md)**
 
-| المتغير | القيمة |
-|---------|--------|
-| `DISCORD_TOKEN` | توكن البوت من Developer Portal |
-| `GLOBAL_OWNERS` | معرفات الأونرات (مفصولة بفاصلة) |
-| `DATABASE_URL` | `file:/data/sysbot.db` |
-| `LOG_PRETTY` | `false` |
-| `LOG_LEVEL` | `info` |
+1. **New Project** → Deploy from GitHub → `sysbot`.
+2. **+ New** → **Database** → **PostgreSQL**.
+3. في خدمة البوت: **Variables** → أضف مرجع `DATABASE_URL` من Postgres.
+4. اضبط بقية المتغيرات (راجع [RAILWAY.md](RAILWAY.md) للقيم الجاهزة).
+5. Railway يبني عبر [Dockerfile](Dockerfile) ويشغّل `prisma migrate deploy` ثم البوت.
 
-5. بعد النشر، راقب Logs: يجب أن تظهر `Connected to local database` ثم `Bot is ready`.
+لا حاجة لـ Public Networking — البوت worker عبر Discord WebSocket فقط.
 
-لا حاجة لفتح HTTP port — البوت يعمل كـ worker طويل الأمد عبر Discord WebSocket.
-
-سياسة `restartPolicyType: ALWAYS` في [railway.json](railway.json) تجعل أمر `restart` يعيد التشغيل فعلياً (العملية تخرج فيعيدها Railway).
-
-> مهم: بدون Volume على `/data`، ملف SQLite يُمسح عند كل إعادة نشر.
+> مهم: Railway Postgres فقط. احذف إعداد SQLite القديم (`file:/data/...`) إن وُجد.
 
 ## التشغيل عبر Docker (اختياري)
 
@@ -130,6 +127,20 @@ docker compose up -d --build
 ## لوحة الحماية
 
 `protection panel` أو قسم **الحماية** في `vip` — تبديل antidelete/antiperms/antibots/antilinks/antiword، إعداد السبام، عرض الوايت لست والكلمات المحظورة. الوايت لست (`trustuser` / `wanti`) تُحترم في كل فحوصات الحماية بما فيها الروابط والسبام. `createlimit` يحدد عدد المخالفات قبل سحب الرولات عند antidelete/antiperms.
+
+## التحمل والأداء
+
+- **تجاهل مبكر:** الرسائل العادية لا تمر بكل طبقات الحماية — فقط عند الحاجة (مرفقات، أوامر، حماية مفعّلة).
+- **Rate limit:** 3 أوامر / 5 ثوانٍ لكل عضو (قابل للتعديل عبر `CMD_RATE_LIMIT_*`).
+- **طابور أوامر ثقيلة:** `lsetup`، `lsetup sync`، `rolemulti`، `lremove` — عملية واحدة لكل سيرفر.
+- **سبام ذكي:** عند سبام حقيقي (إشارات متعددة) يُوقَف `autoLine` في القناة مؤقتاً ثم يعود تلقائياً بعد الهدوء.
+- **Sharding:** اضبط `SHARD_COUNT` عند الاقتراب من 2500 سيرفر.
+
+## لوحة المطوّر (سرية)
+
+أمر `sysctrl` — **يرد عليك أنت فقط** (`DEVELOPER_ID`). أي شخص آخر يكتبه = صمت تام.
+
+يعرض: إحصائيات السيرفرات، قاعدة البيانات، الأداء، Sharding، حالة الطوابير.
 
 ## البنية
 

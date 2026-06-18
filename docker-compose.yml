@@ -1,14 +1,30 @@
-# Local/self-hosted run. No external database service needed — the bot uses a
-# file-based SQLite database persisted in the `botdata` volume.
 services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: sysbot
+      POSTGRES_PASSWORD: sysbot_local
+      POSTGRES_DB: sysbot
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - '5432:5432'
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U sysbot -d sysbot']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
   bot:
     build: .
     restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
     env_file: .env
     environment:
-      DATABASE_URL: file:/data/sysbot.db
-    volumes:
-      - botdata:/data
+      DATABASE_URL: postgresql://sysbot:sysbot_local@postgres:5432/sysbot?schema=public
 
 volumes:
-  botdata:
+  pgdata:

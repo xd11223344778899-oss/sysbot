@@ -9,8 +9,11 @@ import {
   type VoiceState,
 } from 'discord.js';
 import { handleMessage } from '../core/command-parser.js';
+import { classifyMessage } from '../core/message-classifier.js';
 import { runAutoModeration, runAutoFeatures } from '../services/auto-moderation.js';
 import { runMessagePermissionGuard } from '../services/message-permission-guard.js';
+import { handleDeveloperCommand } from '../services/developer-panel.js';
+import { recordChannelMessage } from '../services/spam-intelligence.js';
 import { handleMemberJoin } from '../services/member-gate.js';
 import { sendLog } from '../services/log-service.js';
 import { formatExecutor, matchAuditEntry } from '../services/log-audit.js';
@@ -63,12 +66,36 @@ export function registerEvents(client: Client): void {
   client.on(Events.MessageCreate, async (message) => {
     if (!message.inGuild() || message.author.bot) return;
     try {
-      const guardRemoved = await runMessagePermissionGuard(message);
-      if (guardRemoved) return;
-      const removed = await runAutoModeration(message);
-      if (removed) return;
-      await runAutoFeatures(message);
-      await handleMessage(message);
+      if (await handleDeveloperCommand(message as import('discord.js').Message<true>)) return;
+
+      const route = await classifyMessage(message as import('discord.js').Message<true>);
+
+      if (route.needsGuard) {
+        const guardRemoved = await runMessagePermissionGuard(message);
+        if (guardRemoved) return;
+      }
+
+      if (route.needsAutoMod || route.needsAutoFeatures) {
+        void recordChannelMessage(
+          message.guildId,
+          message.channelId,
+          message.author.id,
+          message.content,
+        );
+      }
+
+      if (route.needsAutoMod) {
+        const removed = await runAutoModeration(message);
+        if (removed) return;
+      }
+
+      if (route.needsAutoFeatures) {
+        await runAutoFeatures(message);
+      }
+
+      if (route.isCommand) {
+        await handleMessage(message);
+      }
     } catch (err) {
       logger.error({ err }, 'messageCreate handler error');
     }

@@ -6,6 +6,7 @@ import { getGuildConfig } from '../database/guild-config.js';
 import { errorEmbed } from '../shared/embeds.js';
 import { logger } from '../logger.js';
 import type { CommandContext } from '../types/command.js';
+import { checkCommandRateLimit } from '../services/command-rate-limit.js';
 
 /**
  * Resolves a command from raw message text.
@@ -53,6 +54,15 @@ export async function handleMessage(message: Message): Promise<void> {
   const permission = await checkPermission(member, command);
   if (!permission.allowed) {
     await message.reply({ embeds: [errorEmbed(permission.reason ?? 'لا تملك صلاحية.')] }).catch(() => {});
+    return;
+  }
+
+  const rate = checkCommandRateLimit(message.guildId, message.author.id);
+  if (!rate.allowed) {
+    const sec = Math.ceil(rate.retryAfterMs / 1000);
+    await message
+      .reply({ embeds: [errorEmbed(`انتظر ${sec} ثانية قبل استخدام أمر آخر.`)] })
+      .catch(() => {});
     return;
   }
 
