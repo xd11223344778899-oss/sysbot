@@ -60,7 +60,11 @@ SQLITE_SOURCE_URL=file:../data/sysbot.db DATABASE_URL="<رابط Railway Postgre
 3. أضف `DATABASE_URL` = `${{Postgres.DATABASE_URL}}` (مرجع من Postgres)
 4. **Redeploy**
 
-القيمة الصحيحة تبدأ بـ `postgresql://` وتحتوي `postgres.railway.internal` (داخلياً) أو host عام من `DATABASE_PUBLIC_URL` للترحيل من جهازك فقط.
+### `P3009` — failed migration `20250617120000_init_postgresql`
+
+يحدث عند أول محاولة نشر فاشلة. الإصدارات الحديثة تتعافى تلقائياً عند Redeploy.
+
+إن استمر الخطأ: **Postgres** → **Data** → **Reset Database** (قاعدة فارغة) ثم Redeploy للبوت.
 
 
 - `!sysctrl` — لوحة المطوّر (فقط لـ `DEVELOPER_ID`)

@@ -1,4 +1,4 @@
-# CreateTable
+-- CreateTable
 CREATE TABLE "Guild" (
     "id" TEXT NOT NULL,
     "prefix" TEXT NOT NULL DEFAULT '!',
