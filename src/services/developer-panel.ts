@@ -2,6 +2,7 @@ import {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
+  MessageFlags,
   type Guild,
   type Message,
 } from 'discord.js';
@@ -120,7 +121,7 @@ export async function openDeveloperPanel(message: Message<true>, guild: Guild): 
               ].join('\n'),
             ),
         ],
-        ephemeral: true,
+        flags: MessageFlags.Ephemeral,
       });
       return;
     }
@@ -139,7 +140,7 @@ export async function openDeveloperPanel(message: Message<true>, guild: Guild): 
               ].join('\n'),
             ),
         ],
-        ephemeral: true,
+        flags: MessageFlags.Ephemeral,
       });
     }
   });

@@ -12,6 +12,7 @@ import { runFullSetup } from '../services/setup-service.js';
 import { getGuildConfig } from '../database/guild-config.js';
 import { openProtectionPanel } from '../services/protection-panel.js';
 import { openInteractiveRolePanel } from '../services/interactive-role-panel.js';
+import { openAdminRolePanel } from '../services/admin-role-panel.js';
 
 interface Section {
   id: string;
@@ -112,8 +113,22 @@ const SECTIONS: Section[] = [
         .setTitle('الرولات التفاعلية')
         .setDescription(
           [
-            'اضبط صلاحيات الرولات: صور، منشن، بث، ميوت سيرفر، دفن سيرفر، وأوامر إدارة.',
+            'اضبط صلاحيات الرولات: صور، منشن، بث، ميوت سيرفر، دفن سيرفر، وأوامر الإشراف.',
             `اختر هذا القسم لفتح اللوحة، أو استخدم \`${p}iroles\`.`,
+          ].join('\n'),
+        ),
+  },
+  {
+    id: 'adminroles',
+    label: 'الرولات الإدارية',
+    build: (p) =>
+      baseEmbed()
+        .setTitle('الرولات الإدارية')
+        .setDescription(
+          [
+            'اضبط الأوامر الإدارية لكل رول من الأعلى للأقل.',
+            'رولات **Administrator** تحصل تلقائياً على الأوامر الإدارية (ما عدا أوامر المالك/الوايت لست).',
+            `اختر هذا القسم لفتح اللوحة، أو استخدم \`${p}aroles\`.`,
           ].join('\n'),
         ),
   },
@@ -219,6 +234,11 @@ const vip: Command = {
           if (section.id === 'interactive') {
             await interaction.deferUpdate();
             await openInteractiveRolePanel(panel, guild, member.id);
+            return;
+          }
+          if (section.id === 'adminroles') {
+            await interaction.deferUpdate();
+            await openAdminRolePanel(panel, guild, member.id);
             return;
           }
           await interaction.update({ embeds: [section.build(cfg.prefix)], components: buildComponents() });

@@ -2,6 +2,7 @@ import {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
+  MessageFlags,
   ModalBuilder,
   TextInputBuilder,
   TextInputStyle,
@@ -119,7 +120,7 @@ export async function openProtectionPanel(
             .setTitle('الوايت لست')
             .setDescription(users.map((id) => `<@${id}>`).join('\n') || 'فارغة'),
         ],
-        ephemeral: true,
+        flags: MessageFlags.Ephemeral,
       });
       return;
     }
@@ -132,7 +133,7 @@ export async function openProtectionPanel(
             .setTitle('الكلمات المحظورة')
             .setDescription(fresh.bannedWords.join(', ') || 'لا يوجد'),
         ],
-        ephemeral: true,
+        flags: MessageFlags.Ephemeral,
       });
       return;
     }
@@ -158,7 +159,7 @@ export async function handleProtectionModal(
   const messages = parseInt(interaction.fields.getTextInputValue('messages'), 10);
   const seconds = parseInt(interaction.fields.getTextInputValue('seconds'), 10);
   if (!messages || !seconds) {
-    await interaction.reply({ embeds: [successEmbed('قيم غير صالحة.')], ephemeral: true });
+    await interaction.reply({ embeds: [successEmbed('قيم غير صالحة.')], flags: MessageFlags.Ephemeral });
     return true;
   }
   await updateGuildConfig(interaction.guild.id, {
@@ -168,7 +169,7 @@ export async function handleProtectionModal(
   });
   await interaction.reply({
     embeds: [successEmbed(`تم ضبط السبام: ${messages} رسائل خلال ${seconds} ثانية.`)],
-    ephemeral: true,
+    flags: MessageFlags.Ephemeral,
   });
   return true;
 }

@@ -4,6 +4,7 @@ import {
   StringSelectMenuBuilder,
   TextInputBuilder,
   TextInputStyle,
+  MessageFlags,
   type GuildMember,
   type MessageComponentInteraction,
   type ModalSubmitInteraction,
@@ -192,7 +193,7 @@ export async function handlePunishmentInteraction(
     const [, , type, targetId, modId] = customId.split(':');
     if (!FLOW_TYPES.has(type) || interaction.user.id !== modId) {
       if (!interaction.replied && !interaction.deferred) {
-        await interaction.reply({ embeds: [errorEmbed('غير مصرح.')], ephemeral: true });
+        await interaction.reply({ embeds: [errorEmbed('غير مصرح.')], flags: MessageFlags.Ephemeral });
       }
       return true;
     }
@@ -251,10 +252,10 @@ export async function handlePunishmentInteraction(
   if (interaction.isModalSubmit() && customId.startsWith('punish:modal:')) {
     const [, , type, targetId, modId] = customId.split(':');
     if (!FLOW_TYPES.has(type) || interaction.user.id !== modId) {
-      await interaction.reply({ embeds: [errorEmbed('غير مصرح.')], ephemeral: true });
+      await interaction.reply({ embeds: [errorEmbed('غير مصرح.')], flags: MessageFlags.Ephemeral });
       return true;
     }
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     const target = await interaction.guild.members.fetch(targetId).catch(() => null);
     const moderator = await interaction.guild.members.fetch(modId).catch(() => null);
     if (!target || !moderator) {

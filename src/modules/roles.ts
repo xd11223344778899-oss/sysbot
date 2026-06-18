@@ -9,6 +9,7 @@ import { tryRunHeavyJob, isHeavyJobRunning } from '../services/heavy-job-queue.j
 import { completeMemberVerification } from '../services/member-gate.js';
 import { logModerationAction } from '../services/log-service.js';
 import { openInteractiveRolePanel } from '../services/interactive-role-panel.js';
+import { openAdminRolePanel } from '../services/admin-role-panel.js';
 
 const role: Command = {
   name: 'role',
@@ -372,6 +373,16 @@ const iroles: Command = {
   },
 };
 
+const aroles: Command = {
+  name: 'aroles',
+  description: 'Open admin roles configuration panel',
+  category: 'roles',
+  permission: 'admin',
+  async execute({ message, guild, member }) {
+    await openAdminRolePanel(message, guild, member.id);
+  },
+};
+
 export const roleCommands: Command[] = [
   role,
   rolemulti,
@@ -389,4 +400,5 @@ export const roleCommands: Command[] = [
   unnew,
   verify,
   iroles,
+  aroles,
 ];

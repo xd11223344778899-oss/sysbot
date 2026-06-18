@@ -124,7 +124,9 @@ model Guild {
   antiCollections AntiCollection[]
   commandAliases  CommandAlias[]
   interactiveRoles   InteractiveRole[]
+  adminRoles         AdminRole[]
   channelStressStates ChannelStressState[]
+  channelAutoFeatures ChannelAutoFeature[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -140,6 +142,20 @@ model ChannelStressState {
   lastConfidence         Float     @default(0)
   suspendCount           Int       @default(0)
   updatedAt              DateTime  @updatedAt
+
+  @@unique([guildId, channelId])
+  @@index([guildId])
+}
+
+// Per-channel auto line / react (setline, setreact, etc.).
+model ChannelAutoFeature {
+  id         String  @id @default(cuid())
+  guild      Guild   @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  guildId    String
+  channelId  String
+  autoLine   Boolean @default(false)
+  autoReact  Boolean @default(false)
+  reactEmoji String?
 
   @@unique([guildId, channelId])
   @@index([guildId])
@@ -363,6 +379,19 @@ model InteractiveRole {
   muteMembers     Boolean @default(false)
   deafenMembers   Boolean @default(false)
   allowedCommands String  @default("[]") // JSON string[]
+
+  @@unique([guildId, roleId])
+  @@index([guildId])
+}
+
+// Per-role admin command grants (configured via VIP admin-roles panel).
+model AdminRole {
+  id              String @id @default(cuid())
+  guild           Guild  @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  guildId         String
+  roleId          String
+  sortOrder       Int    @default(0)
+  allowedCommands String @default("[]") // JSON string[]
 
   @@unique([guildId, roleId])
   @@index([guildId])

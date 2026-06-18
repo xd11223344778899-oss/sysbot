@@ -3,6 +3,7 @@ import { getGuildConfig } from '../database/guild-config.js';
 import { prisma } from '../database/prisma.js';
 import { applyPenalty } from './penalty-service.js';
 import { isTrusted } from './trust-service.js';
+import { getChannelAutoFeature } from './channel-auto-features.js';
 import {
   isAutoLineSuspended,
   markBotLineSent,
@@ -66,18 +67,20 @@ export async function runAutoModeration(message: Message<true>): Promise<boolean
   return false;
 }
 
-/** Auto chat decorations: line separators, reactions, embed pics. */
+/** Auto chat decorations: line separators, reactions (per-channel). */
 export async function runAutoFeatures(message: Message<true>): Promise<void> {
-  const cfg = await getGuildConfig(message.guildId);
   const isBlack = await prisma.blacklistChat.findUnique({
     where: { guildId_channelId: { guildId: message.guildId, channelId: message.channelId } },
   });
   if (isBlack) return;
 
-  if (cfg.autoReact && cfg.reactEmoji) {
-    await message.react(cfg.reactEmoji).catch(() => {});
+  const channelCfg = await getChannelAutoFeature(message.guildId, message.channelId);
+  if (!channelCfg) return;
+
+  if (channelCfg.autoReact && channelCfg.reactEmoji) {
+    await message.react(channelCfg.reactEmoji).catch(() => {});
   }
-  if (cfg.autoLine && message.channel.isTextBased() && 'send' in message.channel) {
+  if (channelCfg.autoLine && message.channel.isTextBased() && 'send' in message.channel) {
     const suspended = await isAutoLineSuspended(message.guildId, message.channelId);
     if (!suspended) {
       await message.channel.send('━━━━━━━━━━━━━━━━━━').catch(() => {});

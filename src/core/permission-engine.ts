@@ -2,7 +2,13 @@ import { PermissionFlagsBits, type GuildMember } from 'discord.js';
 import type { Command } from '../types/command.js';
 import { config } from '../config.js';
 import { prisma } from '../database/prisma.js';
+import { OWNER_RESTRICTED_COMMANDS } from '../shared/constants.js';
 import { getInteractiveAllowedCommands } from '../services/interactive-role-panel.js';
+import {
+  getAdminRoleAllowedCommands,
+  memberHasDiscordAdministrator,
+} from '../services/admin-role-panel.js';
+import { isTrusted } from '../services/trust-service.js';
 
 export interface PermissionResult {
   allowed: boolean;
@@ -27,16 +33,30 @@ export async function isOwner(guildId: string, userId: string): Promise<boolean>
   return Boolean(owner);
 }
 
-function isAdmin(member: GuildMember): boolean {
-  return (
-    member.permissions.has(PermissionFlagsBits.Administrator) ||
-    member.permissions.has(PermissionFlagsBits.ManageGuild)
-  );
+/** Owners + allow-list + protection trust list (for owner-restricted commands). */
+async function isCommandWhitelisted(
+  guildId: string,
+  userId: string,
+  roleIds: string[],
+): Promise<boolean> {
+  if (await isTrusted(guildId, userId)) return true;
+  const allowed = await prisma.accessEntry.findFirst({
+    where: {
+      guildId,
+      mode: 'ALLOW',
+      targetId: { in: [userId, ...roleIds] },
+    },
+  });
+  return Boolean(allowed);
+}
+
+function isManageGuildAdmin(member: GuildMember): boolean {
+  return member.permissions.has(PermissionFlagsBits.ManageGuild);
 }
 
 /**
  * Resolves whether a member may run a command.
- * Order: owner -> deny-list -> per-command config -> allow-list -> level check.
+ * Order: owner -> deny-list -> per-command config -> owner-restricted gate -> allow-list -> level check.
  */
 export async function checkPermission(
   member: GuildMember,
@@ -44,13 +64,11 @@ export async function checkPermission(
 ): Promise<PermissionResult> {
   const guildId = member.guild.id;
   const userId = member.id;
+  const roleIds = member.roles.cache.map((r) => r.id);
 
   const owner = await isOwner(guildId, userId);
   if (owner) return { allowed: true };
 
-  const roleIds = member.roles.cache.map((r) => r.id);
-
-  // deny-list short-circuits everything (except owners, handled above).
   const denied = await prisma.accessEntry.findFirst({
     where: {
       guildId,
@@ -60,7 +78,6 @@ export async function checkPermission(
   });
   if (denied) return { allowed: false, reason: 'أنت محظور من استخدام الأوامر.' };
 
-  // Per-command configuration (cmd command): disabled or explicit allow lists.
   const cmdConfig = await prisma.commandConfig.findUnique({
     where: { guildId_commandName: { guildId, commandName: command.name } },
   });
@@ -75,12 +92,19 @@ export async function checkPermission(
     if (explicitlyAllowed) return { allowed: true };
   }
 
-  if (command.permission === 'owner') {
-    return { allowed: false, reason: 'هذا الأمر مخصص لمالكي البوت فقط.' };
+  const ownerRestricted =
+    OWNER_RESTRICTED_COMMANDS.has(command.name) || command.permission === 'owner';
+  if (ownerRestricted) {
+    if (await isCommandWhitelisted(guildId, userId, roleIds)) {
+      return { allowed: true };
+    }
+    return {
+      allowed: false,
+      reason: 'هذا الأمر مخصص لمالكي البوت أو الوايت لست فقط.',
+    };
   }
 
-  // Global allow-list grants mod-level access.
-  const allowed = await prisma.accessEntry.findFirst({
+  const allowedEntry = await prisma.accessEntry.findFirst({
     where: {
       guildId,
       mode: 'ALLOW',
@@ -91,15 +115,22 @@ export async function checkPermission(
   if (command.permission === 'everyone') return { allowed: true };
 
   if (command.permission === 'admin') {
-    if (isAdmin(member)) return { allowed: true };
+    if (memberHasDiscordAdministrator(member)) return { allowed: true };
+    const adminCmds = await getAdminRoleAllowedCommands(guildId, roleIds);
+    if (adminCmds.has(command.name)) return { allowed: true };
+    if (isManageGuildAdmin(member)) return { allowed: true };
     return { allowed: false, reason: 'هذا الأمر يحتاج صلاحية إدارة.' };
   }
 
-  // 'mod'
-  if (isAdmin(member) || allowed) return { allowed: true };
+  if (isManageGuildAdmin(member) || memberHasDiscordAdministrator(member) || allowedEntry) {
+    return { allowed: true };
+  }
 
   const interactiveCmds = await getInteractiveAllowedCommands(guildId, roleIds);
   if (interactiveCmds.has(command.name)) return { allowed: true };
+
+  const adminCmds = await getAdminRoleAllowedCommands(guildId, roleIds);
+  if (adminCmds.has(command.name)) return { allowed: true };
 
   return { allowed: false, reason: 'ليس لديك صلاحية لاستخدام هذا الأمر.' };
 }

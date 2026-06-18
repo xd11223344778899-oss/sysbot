@@ -2,6 +2,7 @@ import type { Message } from 'discord.js';
 import { registry } from './command-registry.js';
 import { getGuildConfig } from '../database/guild-config.js';
 import { resolveAliasCommand } from '../services/alias-resolver.js';
+import { channelHasAutoFeatures } from '../services/channel-auto-features.js';
 
 export interface MessageRoute {
   needsGuard: boolean;
@@ -58,7 +59,7 @@ export async function classifyMessage(message: Message<true>): Promise<MessageRo
     (hasAttachmentOrImageEmbed(message) || mentionsEveryoneOrHere(message));
 
   const needsAutoMod = cfg.antiLinks || cfg.antiWord || cfg.spamEnabled;
-  const needsAutoFeatures = cfg.autoLine || cfg.autoReact;
+  const needsAutoFeatures = await channelHasAutoFeatures(message.guildId, message.channelId);
   const isCommand = await peekIsCommand(message);
 
   return { needsGuard, needsAutoMod, needsAutoFeatures, isCommand };

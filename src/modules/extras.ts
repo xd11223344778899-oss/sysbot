@@ -1,13 +1,89 @@
 import type { Command } from '../types/command.js';
+import type { Message } from 'discord.js';
 import { successEmbed, errorEmbed, baseEmbed, statusOnOff } from '../shared/embeds.js';
 import { resolveMember } from '../shared/resolvers.js';
 import { prisma } from '../database/prisma.js';
 import { updateGuildConfig } from '../database/guild-config.js';
+import {
+  resolveCommandChannel,
+  setChannelAutoLine,
+  setChannelAutoReact,
+} from '../services/channel-auto-features.js';
+
+function channelLabel(channelId: string): string {
+  return `<#${channelId}>`;
+}
+
+function makeLineToggle(name: string, description: string, enabled: boolean): Command {
+  return {
+    name,
+    description,
+    category: 'utility',
+    permission: 'admin',
+    usage: enabled ? '[#channel]' : '[#channel]',
+    async execute({ message, guild, args }) {
+      const { channelId } = resolveCommandChannel(message as Message<true>, args);
+      const ch = guild.channels.cache.get(channelId);
+      if (!ch?.isTextBased()) {
+        await message.reply({ embeds: [errorEmbed('القناة يجب أن تكون نصية.')] });
+        return;
+      }
+      await setChannelAutoLine(guild.id, channelId, enabled);
+      await message.reply({
+        embeds: [
+          successEmbed(
+            `${name}: ${statusOnOff(enabled)} في ${channelLabel(channelId)}`,
+          ),
+        ],
+      });
+    },
+  };
+}
+
+function makeReactToggle(name: string, description: string, enabled: boolean): Command {
+  return {
+    name,
+    description,
+    category: 'utility',
+    permission: 'admin',
+    usage: enabled ? '[#channel] <emoji>' : '[#channel]',
+    async execute({ message, guild, args }) {
+      const { channelId, restArgs } = resolveCommandChannel(message as Message<true>, args);
+      const ch = guild.channels.cache.get(channelId);
+      if (!ch?.isTextBased()) {
+        await message.reply({ embeds: [errorEmbed('القناة يجب أن تكون نصية.')] });
+        return;
+      }
+
+      if (enabled) {
+        const emoji = restArgs[0] ?? args.find((a) => !a.includes(channelId));
+        if (!emoji) {
+          await message.reply({
+            embeds: [errorEmbed('استخدم: setreact [#قناة] <إيموجي> — أو اكتب الأمر داخل القناة المطلوبة.')],
+          });
+          return;
+        }
+        await setChannelAutoReact(guild.id, channelId, true, emoji);
+        await message.reply({
+          embeds: [
+            successEmbed(`تم تفعيل التفاعل ${emoji} في ${channelLabel(channelId)}`),
+          ],
+        });
+        return;
+      }
+
+      await setChannelAutoReact(guild.id, channelId, false);
+      await message.reply({
+        embeds: [successEmbed(`تم تعطيل التفاعل في ${channelLabel(channelId)}`)],
+      });
+    },
+  };
+}
 
 function makeAutoToggle(
   name: string,
   description: string,
-  key: 'autoLine' | 'autoClear' | 'autoReact',
+  key: 'autoClear',
   value: boolean,
 ): Command {
   return {
@@ -17,19 +93,18 @@ function makeAutoToggle(
     permission: 'admin',
     async execute({ message, guild, args }) {
       const data: Record<string, unknown> = { [key]: value };
-      if (key === 'autoReact' && value && args[0]) data.reactEmoji = args[0];
       await updateGuildConfig(guild.id, data);
       await message.reply({ embeds: [successEmbed(`${name}: ${statusOnOff(value)}`)] });
     },
   };
 }
 
-const setline = makeAutoToggle('setline', 'Auto line in chat', 'autoLine', true);
-const unline = makeAutoToggle('unline', 'Disable auto line in chat', 'autoLine', false);
+const setline = makeLineToggle('setline', 'Auto line in chat', true);
+const unline = makeLineToggle('unline', 'Disable auto line in chat', false);
 const setclear = makeAutoToggle('setclear', 'Auto clear in chat', 'autoClear', true);
 const unclear = makeAutoToggle('unclear', 'Disable auto clear in chat', 'autoClear', false);
-const setreact = makeAutoToggle('setreact', 'Auto react in chat', 'autoReact', true);
-const unreact = makeAutoToggle('unreact', 'Disable auto react in chat', 'autoReact', false);
+const setreact = makeReactToggle('setreact', 'Auto react in chat', true);
+const unreact = makeReactToggle('unreact', 'Disable auto react in chat', false);
 
 const change: Command = {
   name: 'change',
@@ -40,7 +115,6 @@ const change: Command = {
   async execute({ message, guild, member, args }) {
     const target = (await resolveMember(guild, args[0])) ?? member;
     const url = target.user.displayAvatarURL({ extension: 'png', size: 512 });
-    // Greyscale rendering is delegated to a public image filter proxy.
     const grey = `https://images.weserv.nl/?url=${encodeURIComponent(url.replace(/^https?:\/\//, ''))}&filt=greyscale`;
     await message.reply({
       embeds: [baseEmbed().setTitle('أفاتار أبيض وأسود').setImage(grey)],
