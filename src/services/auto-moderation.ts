@@ -87,4 +87,26 @@ export async function runAutoFeatures(message: Message<true>): Promise<void> {
       markBotLineSent(message.guildId, message.channelId);
     }
   }
+
+  const cfg = await getGuildConfig(message.guildId);
+  if (
+    cfg.autoClear &&
+    !isStaff(message) &&
+    message.channel.isTextBased() &&
+    'bulkDelete' in message.channel
+  ) {
+    const recent = await message.channel.messages.fetch({ limit: 15 }).catch(() => null);
+    if (recent) {
+      const toDelete = recent.filter(
+        (m) =>
+          m.author.id === message.author.id &&
+          m.id !== message.id &&
+          !m.pinned &&
+          Date.now() - m.createdTimestamp < 14 * 24 * 60 * 60 * 1000,
+      );
+      if (toDelete.size > 0) {
+        await message.channel.bulkDelete(toDelete, true).catch(() => {});
+      }
+    }
+  }
 }

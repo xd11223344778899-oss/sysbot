@@ -4,6 +4,7 @@ import { prisma } from '../database/prisma.js';
 import { getGuildConfig } from '../database/guild-config.js';
 import { logger } from '../logger.js';
 import { markVmuteLifted } from './vmute-guard.js';
+import { canModerate } from './mod-hierarchy.js';
 
 const ROLE_KEY: Partial<
   Record<PenaltyType, 'mutedRoleId' | 'prisonRoleId' | 'blacklistedRoleId'>
@@ -17,6 +18,7 @@ export interface ApplyPenaltyInput {
   member: GuildMember;
   type: PenaltyType;
   moderatorId: string;
+  moderator?: GuildMember;
   reason?: string;
   expiresAt?: Date | null;
 }
@@ -26,10 +28,16 @@ export async function applyPenalty({
   member,
   type,
   moderatorId,
+  moderator,
   reason,
   expiresAt,
 }: ApplyPenaltyInput) {
   const guildId = member.guild.id;
+
+  if (moderator) {
+    const hierarchy = await canModerate(moderator, member);
+    if (!hierarchy.allowed) throw new Error(`HIERARCHY:${hierarchy.reason ?? 'denied'}`);
+  }
 
   const exempt = await prisma.exemption.findUnique({
     where: { guildId_userId_type: { guildId, userId: member.id, type } },

@@ -58,10 +58,15 @@ const rpoint: Command = {
     }
     const point = await prisma.point.upsert({
       where: { guildId_userId: { guildId: guild.id, userId: target.id } },
-      update: { amount: { decrement: amount } },
+      update: {},
       create: { guildId: guild.id, userId: target.id, amount: 0 },
     });
-    await message.reply({ embeds: [successEmbed(`نقاط ${target} الآن: ${Math.max(point.amount, 0)}.`)] });
+    const next = Math.max(0, point.amount - amount);
+    await prisma.point.update({
+      where: { guildId_userId: { guildId: guild.id, userId: target.id } },
+      data: { amount: next },
+    });
+    await message.reply({ embeds: [successEmbed(`نقاط ${target} الآن: ${next}.`)] });
   },
 };
 
@@ -86,7 +91,7 @@ const preset: Command = {
 
 const points: Command = {
   name: 'points',
-  description: 'Points settings',
+  description: 'Top 10 members by points',
   category: 'points',
   permission: 'everyone',
   async execute({ message, guild }) {

@@ -2,19 +2,11 @@ import type { Command } from '../types/command.js';
 import { successEmbed, errorEmbed, baseEmbed } from '../shared/embeds.js';
 import { prisma } from '../database/prisma.js';
 import { updateGuildConfig } from '../database/guild-config.js';
-
-const PALETTE: Record<string, string> = {
-  أحمر: '#e74c3c',
-  أزرق: '#3498db',
-  أخضر: '#2ecc71',
-  أصفر: '#f1c40f',
-  بنفسجي: '#9b59b6',
-  وردي: '#e91e63',
-  برتقالي: '#e67e22',
-  سماوي: '#1abc9c',
-  ذهبي: '#f39c12',
-  أبيض: '#ffffff',
-};
+import {
+  getGuildColorPalette,
+  resolveColorHex,
+  assertJsonSize,
+} from '../services/color-palette.js';
 
 async function getOrCreatePersonalRole(guild: any, memberId: string) {
   const special = await prisma.specialRole.findUnique({
@@ -47,13 +39,14 @@ const color: Command = {
       await message.reply({ embeds: [errorEmbed('اكتب لون: color #ff0000 أو color أحمر.')] });
       return;
     }
-    const hex = PALETTE[input] ?? input;
-    if (!/^#?[0-9a-fA-F]{6}$/.test(hex)) {
+    const palette = await getGuildColorPalette(guild.id);
+    const hex = resolveColorHex(palette, input);
+    if (!hex) {
       await message.reply({ embeds: [errorEmbed('لون غير صحيح.')] });
       return;
     }
     const role = await getOrCreatePersonalRole(guild, member.id);
-    await role.setColor(`#${hex.replace('#', '')}` as `#${string}`);
+    await role.setColor(hex as `#${string}`);
     await message.reply({ embeds: [successEmbed('تم تغيير لونك.')] });
   },
 };
@@ -63,8 +56,9 @@ const colors: Command = {
   description: 'Get colors list',
   category: 'colors',
   permission: 'everyone',
-  async execute({ message }) {
-    const lines = Object.entries(PALETTE).map(([name, hex]) => `${name}: ${hex}`);
+  async execute({ message, guild }) {
+    const palette = await getGuildColorPalette(guild.id);
+    const lines = Object.entries(palette).map(([name, hex]) => `${name}: ${hex}`);
     await message.reply({ embeds: [baseEmbed().setTitle('الألوان المتاحة').setDescription(lines.join('\n'))] });
   },
 };
@@ -74,12 +68,18 @@ const mcolors: Command = {
   description: 'Get colors menu',
   category: 'colors',
   permission: 'everyone',
-  async execute({ message }) {
+  async execute({ message, guild }) {
+    const palette = await getGuildColorPalette(guild.id);
     await message.reply({
       embeds: [
         baseEmbed()
           .setTitle('قائمة الألوان')
-          .setDescription('اكتب `color <اسم اللون>` لاختيار لونك.\n' + Object.keys(PALETTE).map((c) => `- ${c}`).join('\n')),
+          .setDescription(
+            'اكتب `color <اسم اللون>` لاختيار لونك.\n' +
+              Object.keys(palette)
+                .map((c) => `- ${c}`)
+                .join('\n'),
+          ),
       ],
     });
   },
@@ -87,7 +87,7 @@ const mcolors: Command = {
 
 const setcolors: Command = {
   name: 'setcolors',
-  description: 'Set colors settings',
+  description: 'Set custom color palette (JSON name -> hex)',
   category: 'colors',
   permission: 'admin',
   usage: '<json>',
@@ -102,12 +102,16 @@ const setcolors: Command = {
       }
     }
     const serialized = JSON.stringify(data);
+    if (!assertJsonSize(serialized)) {
+      await message.reply({ embeds: [errorEmbed('حجم JSON كبير جداً (الحد 8KB).')] });
+      return;
+    }
     await prisma.antiCollection.upsert({
       where: { guildId_name: { guildId: guild.id, name: 'colors' } },
       update: { data: serialized },
       create: { guildId: guild.id, name: 'colors', data: serialized },
     });
-    await message.reply({ embeds: [successEmbed('تم حفظ إعدادات الألوان.')] });
+    await message.reply({ embeds: [successEmbed('تم حفظ إعدادات الألوان — ستُستخدم في color/colors/mcolors.')] });
   },
 };
 

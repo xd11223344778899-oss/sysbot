@@ -116,7 +116,7 @@ export const INTERACTIVE_GRANTABLE_COMMANDS = [
 ] as const;
 
 /**
- * Bot-management commands: owners + command whitelist (allow/trust) only.
+ * Bot-management commands: owners + ALLOW list only (trust is protection-only).
  * Discord Administrator alone does NOT grant these.
  */
 export const OWNER_RESTRICTED_COMMANDS = new Set([
@@ -132,6 +132,8 @@ export const OWNER_RESTRICTED_COMMANDS = new Set([
   'settings',
   'setbanmsg',
   'setchannel',
+  'setnew',
+  'unsetnew',
   'setverify',
   'unsetverify',
   'setverifyreact',
@@ -173,10 +175,6 @@ export const OWNER_RESTRICTED_COMMANDS = new Set([
   'wantilist',
   'collection',
   'ecollection',
-  'apoint',
-  'rpoint',
-  'preset',
-  'points',
   'setcolors',
   'setpcolor',
   'setpic',
@@ -188,4 +186,7 @@ export const OWNER_RESTRICTED_COMMANDS = new Set([
   'dm',
   'addemoji',
   'sticker',
+  'aroles',
+  'iroles',
+  'verifyall',
 ]);

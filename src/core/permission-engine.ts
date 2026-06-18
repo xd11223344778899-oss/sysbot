@@ -8,7 +8,6 @@ import {
   getAdminRoleAllowedCommands,
   memberHasDiscordAdministrator,
 } from '../services/admin-role-panel.js';
-import { isTrusted } from '../services/trust-service.js';
 
 export interface PermissionResult {
   allowed: boolean;
@@ -33,13 +32,12 @@ export async function isOwner(guildId: string, userId: string): Promise<boolean>
   return Boolean(owner);
 }
 
-/** Owners + allow-list + protection trust list (for owner-restricted commands). */
-async function isCommandWhitelisted(
+/** Global ALLOW list — grants owner-restricted commands only (not blanket mod access). */
+async function isOnAllowList(
   guildId: string,
   userId: string,
   roleIds: string[],
 ): Promise<boolean> {
-  if (await isTrusted(guildId, userId)) return true;
   const allowed = await prisma.accessEntry.findFirst({
     where: {
       guildId,
@@ -56,7 +54,7 @@ function isManageGuildAdmin(member: GuildMember): boolean {
 
 /**
  * Resolves whether a member may run a command.
- * Order: owner -> deny-list -> per-command config -> owner-restricted gate -> allow-list -> level check.
+ * Order: owner -> deny -> disabled -> owner-restricted (allow list only) -> per-command allow -> level check.
  */
 export async function checkPermission(
   member: GuildMember,
@@ -84,6 +82,20 @@ export async function checkPermission(
   if (cmdConfig && !cmdConfig.enabled) {
     return { allowed: false, reason: 'هذا الأمر معطّل في هذا السيرفر.' };
   }
+
+  const ownerRestricted =
+    OWNER_RESTRICTED_COMMANDS.has(command.name) || command.permission === 'owner';
+
+  if (ownerRestricted) {
+    if (await isOnAllowList(guildId, userId, roleIds)) {
+      return { allowed: true };
+    }
+    return {
+      allowed: false,
+      reason: 'هذا الأمر مخصص لمالكي البوت أو قائمة السماح فقط.',
+    };
+  }
+
   if (cmdConfig) {
     const allowedUsers = parseIdList(cmdConfig.allowedUserIds);
     const allowedRoles = parseIdList(cmdConfig.allowedRoleIds);
@@ -91,26 +103,6 @@ export async function checkPermission(
       allowedUsers.includes(userId) || allowedRoles.some((id) => roleIds.includes(id));
     if (explicitlyAllowed) return { allowed: true };
   }
-
-  const ownerRestricted =
-    OWNER_RESTRICTED_COMMANDS.has(command.name) || command.permission === 'owner';
-  if (ownerRestricted) {
-    if (await isCommandWhitelisted(guildId, userId, roleIds)) {
-      return { allowed: true };
-    }
-    return {
-      allowed: false,
-      reason: 'هذا الأمر مخصص لمالكي البوت أو الوايت لست فقط.',
-    };
-  }
-
-  const allowedEntry = await prisma.accessEntry.findFirst({
-    where: {
-      guildId,
-      mode: 'ALLOW',
-      targetId: { in: [userId, ...roleIds] },
-    },
-  });
 
   if (command.permission === 'everyone') return { allowed: true };
 
@@ -122,7 +114,7 @@ export async function checkPermission(
     return { allowed: false, reason: 'هذا الأمر يحتاج صلاحية إدارة.' };
   }
 
-  if (isManageGuildAdmin(member) || memberHasDiscordAdministrator(member) || allowedEntry) {
+  if (isManageGuildAdmin(member) || memberHasDiscordAdministrator(member)) {
     return { allowed: true };
   }
 

@@ -12,17 +12,20 @@ function extractId(token: string | undefined): string | null {
 export async function resolveMember(
   guild: Guild,
   token: string | undefined,
+  options?: { punitive?: boolean },
 ): Promise<GuildMember | null> {
   const id = extractId(token);
   if (id) {
     return guild.members.fetch(id).catch(() => null);
   }
   if (!token) return null;
+  if (options?.punitive) return null;
   const lower = token.toLowerCase();
-  const found = guild.members.cache.find(
+  const matches = guild.members.cache.filter(
     (m) => m.user.username.toLowerCase() === lower || m.displayName.toLowerCase() === lower,
   );
-  return found ?? null;
+  if (matches.size === 1) return matches.first() ?? null;
+  return null;
 }
 
 export function resolveRole(guild: Guild, token: string | undefined): Role | null {

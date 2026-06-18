@@ -7,6 +7,9 @@ import {
 import { logModerationAction } from './log-service.js';
 import { logger } from '../logger.js';
 
+const VERIFY_REACT_COOLDOWN_MS = 3000;
+const verifyReactLast = new Map<string, number>();
+
 export function normalizeEmojiKey(raw: string): string {
   const custom = raw.match(/\d{16,20}/)?.[0];
   return custom ?? raw;
@@ -48,6 +51,12 @@ export async function handleVerifyReaction(
     const guild = await client.guilds.fetch(message.guildId);
     const member = await guild.members.fetch(userId).catch(() => null);
     if (!member || member.user.bot) return true;
+
+    const rateKey = `${message.guildId}:${userId}`;
+    const now = Date.now();
+    const last = verifyReactLast.get(rateKey) ?? 0;
+    if (now - last < VERIFY_REACT_COOLDOWN_MS) return true;
+    verifyReactLast.set(rateKey, now);
 
     if (!cfg.unverifiedRoleId) return true;
 

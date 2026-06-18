@@ -25,6 +25,8 @@ import { handlePunishmentInteraction } from '../services/punishment-flow.js';
 import { onVmuteVoiceUpdate } from '../services/vmute-guard.js';
 import { syncAllOverwritesOnChannelCreate } from '../services/channel-permissions.js';
 import { isTrusted, recordProtectionStrike } from '../services/trust-service.js';
+import { isProtectedRoleMember } from '../services/collection-service.js';
+import { validateRoleForAssignment } from '../services/mod-hierarchy.js';
 import { handleProtectionModal } from '../services/protection-panel.js';
 import {
   antiDeleteLog,
@@ -540,8 +542,15 @@ async function handleReactionRole(client: Client, reaction: any, userId: string,
     const guild = await client.guilds.fetch(guildId);
     const member = await guild.members.fetch(userId).catch(() => null);
     if (!member) return;
-    if (add) await member.roles.add(row.roleId).catch(() => {});
-    else await member.roles.remove(row.roleId).catch(() => {});
+    const role = guild.roles.cache.get(row.roleId);
+    if (!role) return;
+    if (add) {
+      const safety = await validateRoleForAssignment(guild, role);
+      if (!safety.safe) return;
+      await member.roles.add(row.roleId).catch(() => {});
+    } else {
+      await member.roles.remove(row.roleId).catch(() => {});
+    }
   } catch (err) {
     logger.warn({ err }, 'reaction role error');
   }
@@ -562,6 +571,16 @@ async function maybeAntiDelete(client: Client, guildId: string, type: 'channelDe
   const executor = entry?.executor;
   if (!executor || executor.bot) return;
   if (await isTrusted(guildId, executor.id)) return;
+  const executorMember = await guild.members.fetch(executor.id).catch(() => null);
+  if (
+    executorMember &&
+    (await isProtectedRoleMember(
+      guildId,
+      executorMember.roles.cache.map((r) => r.id),
+    ))
+  ) {
+    return;
+  }
   const strike = await recordProtectionStrike(guildId, executor.id);
   if (!strike.exceeded) return;
   const member = await guild.members.fetch(executor.id).catch(() => null);
@@ -588,6 +607,16 @@ async function maybeAntiPerms(client: Client, guildId: string, _roleId: string) 
   const executor = entry?.executor;
   if (!executor || executor.bot) return;
   if (await isTrusted(guildId, executor.id)) return;
+  const executorMember = await guild.members.fetch(executor.id).catch(() => null);
+  if (
+    executorMember &&
+    (await isProtectedRoleMember(
+      guildId,
+      executorMember.roles.cache.map((r) => r.id),
+    ))
+  ) {
+    return;
+  }
   const strike = await recordProtectionStrike(guildId, executor.id);
   if (!strike.exceeded) return;
   const member = await guild.members.fetch(executor.id).catch(() => null);

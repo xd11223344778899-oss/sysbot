@@ -6,6 +6,8 @@ import { prisma } from '../database/prisma.js';
 import { getGuildConfig, updateGuildConfig } from '../database/guild-config.js';
 import { openProtectionPanel } from '../services/protection-panel.js';
 import { toggleTrustEntry, listTrustedUsers } from '../services/trust-service.js';
+import { getCollectionData } from '../services/collection-service.js';
+import { assertJsonSize } from '../services/color-palette.js';
 
 function makeToggleCommand(
   name: string,
@@ -269,8 +271,8 @@ function makeWantiCommand(name: string, description: string): Command {
   };
 }
 
-const wanti = makeWantiCommand('wanti', 'Allow or deny user to delete roles or channels');
-const wantilist = makeWantiCommand('wantilist', 'Allow or deny user to delete roles or channels');
+const wanti = makeWantiCommand('wanti', 'Add or remove user from protection trust list (alias of trustuser)');
+const wantilist = makeWantiCommand('wantilist', 'Show protection trust list (alias of trustlist)');
 
 function makeCollectionCommand(name: string, description: string): Command {
   return {
@@ -293,6 +295,20 @@ function makeCollectionCommand(name: string, description: string): Command {
         return;
       }
       const payload = rest.slice(collName.length).trim();
+      if (!payload) {
+        const existing = await getCollectionData(guild.id, collName);
+        if (existing) {
+          const preview = existing.length > 1800 ? `${existing.slice(0, 1800)}…` : existing;
+          await message.reply({
+            embeds: [
+              baseEmbed()
+                .setTitle(`مجموعة: ${collName}`)
+                .setDescription(`\`\`\`json\n${preview}\n\`\`\``),
+            ],
+          });
+          return;
+        }
+      }
       let data: unknown = {};
       if (payload) {
         try {
@@ -303,6 +319,10 @@ function makeCollectionCommand(name: string, description: string): Command {
         }
       }
       const serialized = JSON.stringify(data);
+      if (!assertJsonSize(serialized)) {
+        await message.reply({ embeds: [errorEmbed('حجم JSON كبير جداً (الحد 8KB).')] });
+        return;
+      }
       await prisma.antiCollection.upsert({
         where: { guildId_name: { guildId: guild.id, name: collName } },
         update: { data: serialized },

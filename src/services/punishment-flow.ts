@@ -22,6 +22,7 @@ import { schedulePenaltyExpiry } from '../services/penalty-scheduler.js';
 import { logModerationAction } from '../services/log-service.js';
 import { LOG_COLORS } from '../shared/log-embed.js';
 import { getGuildConfig } from '../database/guild-config.js';
+import { canModerate } from '../services/mod-hierarchy.js';
 import type { PunishReason } from '../shared/punish-reasons.js';
 
 export type FlowPenaltyType = PenaltyType | 'KICK';
@@ -57,6 +58,11 @@ export async function startPunishmentFlow(
   target: GuildMember,
   moderator: GuildMember,
 ): Promise<void> {
+  const hierarchy = await canModerate(moderator, target);
+  if (!hierarchy.allowed) {
+    await message.reply({ embeds: [errorEmbed(hierarchy.reason ?? 'غير مسموح.')] });
+    return;
+  }
   const reasons = filterReasonsForType(await getPunishReasons(message.guildId), type);
   const options = reasons.slice(0, 24).map((r) => ({
     label: r.label.slice(0, 100),
@@ -116,6 +122,14 @@ async function executeFlowPenalty(
   const guild = target.guild;
   const channelId = interaction.channelId ?? undefined;
 
+  const hierarchy = await canModerate(moderator, target);
+  if (!hierarchy.allowed) {
+    const embed = errorEmbed(hierarchy.reason ?? 'غير مسموح.');
+    if (interaction.isModalSubmit()) await interaction.editReply({ embeds: [embed] });
+    else await interaction.editReply({ embeds: [embed], components: [] });
+    return;
+  }
+
   if (type === 'KICK') {
     if (!target.kickable) {
       if (interaction.isModalSubmit()) {
@@ -155,6 +169,7 @@ async function executeFlowPenalty(
       member: target,
       type: type as PenaltyType,
       moderatorId: moderator.id,
+      moderator,
       reason,
       expiresAt,
     });
@@ -172,6 +187,7 @@ async function executeFlowPenalty(
     if (code === 'ROLE_NOT_CONFIGURED') text = 'شغّل الإعداد الأولي (lsetup) أولاً.';
     else if (code === 'EXEMPT') text = 'هذا العضو لديه استثناء من هذه العقوبة.';
     else if (code === 'VMUTE_FAILED') text = 'تعذّر تطبيق كتم الصوت. تحقق من صلاحيات البوت.';
+    else if (code.startsWith('HIERARCHY:')) text = code.slice('HIERARCHY:'.length);
     const embed = errorEmbed(text);
     if (interaction.isModalSubmit()) await interaction.editReply({ embeds: [embed] });
     else await interaction.editReply({ embeds: [embed], components: [] });

@@ -2,7 +2,7 @@ import { EmbedBuilder } from 'discord.js';
 import type { Command, CommandContext } from '../types/command.js';
 import type { PenaltyType } from '../shared/enums.js';
 import { successEmbed, errorEmbed, baseEmbed } from '../shared/embeds.js';
-import { resolveMember, parseDuration } from '../shared/resolvers.js';
+import { resolveMember, parseDuration, resolveRole } from '../shared/resolvers.js';
 import { applyPenalty, liftPenalty, canLift, getUserPenalties } from '../services/penalty-service.js';
 import { schedulePenaltyExpiry } from '../services/penalty-scheduler.js';
 import {
@@ -14,6 +14,9 @@ import { enforceVmute } from '../services/vmute-guard.js';
 import { logModerationAction } from '../services/log-service.js';
 import { LOG_COLORS } from '../shared/log-embed.js';
 import { prisma } from '../database/prisma.js';
+import { canModerate } from '../services/mod-hierarchy.js';
+import { encodeBlockReason } from '../services/block-service.js';
+import { PENALTY_TYPES } from '../shared/enums.js';
 
 const PENALTY_LOG_TITLE: Partial<Record<PenaltyType, string>> = {
   MUTE: 'إسكات كتابي',
@@ -32,7 +35,7 @@ const LIFT_LOG_TITLE: Partial<Record<PenaltyType, string>> = {
 };
 
 async function resolveTargetAndReason(ctx: CommandContext) {
-  const target = await resolveMember(ctx.guild, ctx.args[0]);
+  const target = await resolveMember(ctx.guild, ctx.args[0], { punitive: true });
   let rest = ctx.rest;
   if (ctx.args[0]) rest = rest.slice(ctx.args[0].length).trim();
   let durationMs: number | null = null;
@@ -75,6 +78,7 @@ function makePenaltyCommand(
           member: target,
           type,
           moderatorId: ctx.member.id,
+          moderator: ctx.member,
           reason,
           expiresAt,
         });
@@ -101,6 +105,8 @@ function makePenaltyCommand(
           await ctx.message.reply({ embeds: [errorEmbed('هذا العضو لديه استثناء من هذه العقوبة.')] });
         } else if (code === 'VMUTE_FAILED') {
           await ctx.message.reply({ embeds: [errorEmbed('تعذّر تطبيق كتم الصوت. تحقق من صلاحيات البوت.')] });
+        } else if (code.startsWith('HIERARCHY:')) {
+          await ctx.message.reply({ embeds: [errorEmbed(code.slice('HIERARCHY:'.length))] });
         } else {
           await ctx.message.reply({ embeds: [errorEmbed('تعذّر تنفيذ العقوبة.')] });
         }
@@ -173,9 +179,14 @@ const ban: Command = {
   permission: 'admin',
   usage: '<@user> [reason]',
   async execute(ctx) {
-    const target = await resolveMember(ctx.guild, ctx.args[0]);
+    const target = await resolveMember(ctx.guild, ctx.args[0], { punitive: true });
     if (!target) {
-      await ctx.message.reply({ embeds: [errorEmbed('حدد عضو صحيح.')] });
+      await ctx.message.reply({ embeds: [errorEmbed('حدد عضو صحيح (منشن أو معرف).')] });
+      return;
+    }
+    const hierarchy = await canModerate(ctx.member, target);
+    if (!hierarchy.allowed) {
+      await ctx.message.reply({ embeds: [errorEmbed(hierarchy.reason ?? 'غير مسموح.')] });
       return;
     }
     if (!hasManualPunishArgs(ctx.rest, ctx.args[0])) {
@@ -217,6 +228,14 @@ const unban: Command = {
       await ctx.message.reply({ embeds: [errorEmbed('حدد معرف العضو.')] });
       return;
     }
+    const active = await prisma.penalty.findFirst({
+      where: { guildId: ctx.guild.id, userId: id, type: 'BAN', active: true },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (active && !(await canLift(ctx.guild.id, ctx.member.id, active.moderatorId))) {
+      await ctx.message.reply({ embeds: [errorEmbed('فقط معطي العقوبة أو المصرّح له يمكنه فك الحظر.')] });
+      return;
+    }
     await ctx.guild.bans.remove(id).then(
       async () => {
         await prisma.penalty.updateMany({
@@ -245,9 +264,14 @@ const kick: Command = {
   permission: 'admin',
   usage: '<@user> [reason]',
   async execute(ctx) {
-    const target = await resolveMember(ctx.guild, ctx.args[0]);
+    const target = await resolveMember(ctx.guild, ctx.args[0], { punitive: true });
     if (!target) {
-      await ctx.message.reply({ embeds: [errorEmbed('حدد عضو صحيح.')] });
+      await ctx.message.reply({ embeds: [errorEmbed('حدد عضو صحيح (منشن أو معرف).')] });
+      return;
+    }
+    const hierarchy = await canModerate(ctx.member, target);
+    if (!hierarchy.allowed) {
+      await ctx.message.reply({ embeds: [errorEmbed(hierarchy.reason ?? 'غير مسموح.')] });
       return;
     }
     if (!hasManualPunishArgs(ctx.rest, ctx.args[0])) {
@@ -437,7 +461,7 @@ const mypenalties: Command = {
 
 const penalties: Command = {
   name: 'penalties',
-  description: 'Edit User penalties',
+  description: 'View user active penalties',
   category: 'moderation',
   permission: 'mod',
   usage: '<@user>',
@@ -488,22 +512,32 @@ const pcontinue: Command = {
   permission: 'mod',
   usage: '<@user> <type>',
   async execute(ctx) {
-    const target = await resolveMember(ctx.guild, ctx.args[0]);
-    const type = (ctx.args[1]?.toUpperCase() ?? 'MUTE') as PenaltyType;
+    const target = await resolveMember(ctx.guild, ctx.args[0], { punitive: true });
+    const typeRaw = (ctx.args[1]?.toUpperCase() ?? 'MUTE') as PenaltyType;
     if (!target) {
       await ctx.message.reply({ embeds: [errorEmbed('حدد عضو صحيح.')] });
       return;
     }
-    const roleKey = { MUTE: 'mutedRoleId', PRISON: 'prisonRoleId' }[type as string] as
-      | 'mutedRoleId'
-      | 'prisonRoleId'
-      | undefined;
-    if (type === 'VMUTE') {
-      await enforceVmute(target).catch(() => {});
-    } else if (roleKey && ctx.config[roleKey]) {
-      await target.roles.add(ctx.config[roleKey]).catch(() => {});
+    if (!PENALTY_TYPES.includes(typeRaw) || typeRaw === 'WARN' || typeRaw === 'BLOCK') {
+      await ctx.message.reply({ embeds: [errorEmbed('نوع عقوبة غير صالح. استخدم: MUTE, PRISON, VMUTE.')] });
+      return;
     }
-    await ctx.message.reply({ embeds: [successEmbed('تم استئناف العقوبة على العضو.')] });
+    const active = await prisma.penalty.findFirst({
+      where: { guildId: ctx.guild.id, userId: target.id, type: typeRaw, active: true },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (!active) {
+      await ctx.message.reply({ embeds: [errorEmbed('لا توجد عقوبة فعّالة من هذا النوع.')] });
+      return;
+    }
+    if (typeRaw === 'VMUTE') {
+      await enforceVmute(target).catch(() => {});
+    } else if (typeRaw === 'MUTE' && ctx.config.mutedRoleId) {
+      await target.roles.add(ctx.config.mutedRoleId).catch(() => {});
+    } else if (typeRaw === 'PRISON' && ctx.config.prisonRoleId) {
+      await target.roles.add(ctx.config.prisonRoleId).catch(() => {});
+    }
+    await ctx.message.reply({ embeds: [successEmbed(`تم استئناف عقوبة ${typeRaw} على ${target}.`)] });
   },
 };
 
@@ -518,6 +552,10 @@ const exemption: Command = {
     const type = (ctx.args[1]?.toUpperCase() ?? 'MUTE') as PenaltyType;
     if (!target) {
       await ctx.message.reply({ embeds: [errorEmbed('حدد عضو صحيح.')] });
+      return;
+    }
+    if (!PENALTY_TYPES.includes(type) || type === 'WARN') {
+      await ctx.message.reply({ embeds: [errorEmbed('نوع استثناء غير صالح.')] });
       return;
     }
     await prisma.exemption.upsert({
@@ -549,35 +587,46 @@ const procedure: Command = {
   },
 };
 
-function makeListPenaltyCommand(name: string, type: PenaltyType, description: string, verb: string): Command {
-  return {
-    name,
-    description,
-    category: 'moderation',
-    permission: 'admin',
-    usage: '<@user> [reason]',
-    async execute(ctx) {
-      const target = await resolveMember(ctx.guild, ctx.args[0]);
-      if (!target) {
-        await ctx.message.reply({ embeds: [errorEmbed('حدد عضو صحيح.')] });
-        return;
-      }
-      await prisma.penalty.create({
-        data: {
-          guildId: ctx.guild.id,
-          userId: target.id,
-          type,
-          moderatorId: ctx.member.id,
-          reason: ctx.rest.slice(ctx.args[0].length).trim() || undefined,
-        },
-      });
-      await ctx.message.reply({ embeds: [successEmbed(`تم ${verb} ${target}.`)] });
-    },
-  };
-}
-
 const black = makePenaltyCommand('black', 'BLACKLIST', 'Blacklist user from server', 'تم إضافة للبلاك');
-const block = makeListPenaltyCommand('block', 'BLOCK', 'block user from role', 'حظر من الرول');
+
+const block: Command = {
+  name: 'block',
+  description: 'Block user from receiving role(s) via role command',
+  category: 'moderation',
+  permission: 'admin',
+  usage: '<@user> [@role] [reason]',
+  async execute(ctx) {
+    const target = await resolveMember(ctx.guild, ctx.args[0], { punitive: true });
+    if (!target) {
+      await ctx.message.reply({ embeds: [errorEmbed('حدد عضو صحيح (منشن أو معرف).')] });
+      return;
+    }
+    const hierarchy = await canModerate(ctx.member, target);
+    if (!hierarchy.allowed) {
+      await ctx.message.reply({ embeds: [errorEmbed(hierarchy.reason ?? 'غير مسموح.')] });
+      return;
+    }
+    const maybeRole = resolveRole(ctx.guild, ctx.args[1]);
+    let userReason = ctx.rest.slice(ctx.args[0].length).trim();
+    let blockedRole = maybeRole;
+    if (!blockedRole && ctx.args[1] && !ctx.args[1].match(/<@&?\d+/)) {
+      userReason = [ctx.args[1], ...ctx.args.slice(2)].join(' ').trim();
+    } else if (blockedRole) {
+      userReason = ctx.args.slice(2).join(' ').trim();
+    }
+    await prisma.penalty.create({
+      data: {
+        guildId: ctx.guild.id,
+        userId: target.id,
+        type: 'BLOCK',
+        moderatorId: ctx.member.id,
+        reason: encodeBlockReason(blockedRole?.id, userReason || undefined),
+      },
+    });
+    const scope = blockedRole ? `من رول ${blockedRole}` : 'من جميع الرولات (عبر أمر role)';
+    await ctx.message.reply({ embeds: [successEmbed(`تم حظر ${target} ${scope}.`)] });
+  },
+};
 
 function makeUnlistCommand(name: string, type: PenaltyType, description: string, verb: string): Command {
   return {
@@ -587,9 +636,18 @@ function makeUnlistCommand(name: string, type: PenaltyType, description: string,
     permission: 'admin',
     usage: '<@user|id>',
     async execute(ctx) {
-      const id = (await resolveMember(ctx.guild, ctx.args[0]))?.id ?? ctx.args[0]?.replace(/\D/g, '');
+      const member = await resolveMember(ctx.guild, ctx.args[0], { punitive: true });
+      const id = member?.id ?? ctx.args[0]?.replace(/\D/g, '');
       if (!id) {
         await ctx.message.reply({ embeds: [errorEmbed('حدد العضو.')] });
+        return;
+      }
+      const active = await prisma.penalty.findFirst({
+        where: { guildId: ctx.guild.id, userId: id, type, active: true },
+        orderBy: { createdAt: 'desc' },
+      });
+      if (active && !(await canLift(ctx.guild.id, ctx.member.id, active.moderatorId))) {
+        await ctx.message.reply({ embeds: [errorEmbed('فقط معطي العقوبة أو المصرّح له يمكنه فكها.')] });
         return;
       }
       await prisma.penalty.updateMany({

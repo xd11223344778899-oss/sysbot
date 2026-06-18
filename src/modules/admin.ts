@@ -10,7 +10,7 @@ import {
   formatDurationMs,
 } from '../services/punish-reasons-service.js';
 import type { PunishApplicableType } from '../shared/punish-reasons.js';
-import { SYSTEM_ROLES, VERIFY_CHANNEL_NAME } from '../shared/constants.js';
+import { SYSTEM_ROLES, VERIFY_CHANNEL_NAME, NEW_CHANNEL_NAME } from '../shared/constants.js';
 import { ensureGateChannel } from '../services/member-gate.js';
 import {
   applyUnverifiedOverwritesToGuild,
@@ -199,16 +199,19 @@ const setbanmsg: Command = {
 
 const setchannel: Command = {
   name: 'setchannel',
-  description: 'Set prison and new channel',
+  description: 'Set new, verify, or prison text channel',
   category: 'vip',
   permission: 'admin',
-  usage: '<new|verify> <#channel>',
+  usage: '<new|verify|prison> <#channel>',
   async execute({ message, guild, args }) {
     const type = args[0]?.toLowerCase();
     const channelId = args[1]?.replace(/\D/g, '') || message.channelId;
     if (type === 'new') {
       await updateGuildConfig(guild.id, { newChannelId: channelId });
       await message.reply({ embeds: [successEmbed(`تم ضبط قناة new على <#${channelId}>.`)] });
+    } else if (type === 'prison') {
+      await updateGuildConfig(guild.id, { prisonChannelId: channelId });
+      await message.reply({ embeds: [successEmbed(`تم ضبط قناة السجن على <#${channelId}>.`)] });
     } else if (type === 'verify') {
       await updateGuildConfig(guild.id, { verifyChannelId: channelId });
       const cfg = await getGuildConfig(guild.id);
@@ -229,8 +232,77 @@ const setchannel: Command = {
         await message.reply({ embeds: [successEmbed(`تم ضبط قناة التفعيل على <#${channelId}>.`)] });
       }
     } else {
-      await message.reply({ embeds: [errorEmbed('استخدم: setchannel <new|verify> <#قناة>.')] });
+      await message.reply({ embeds: [errorEmbed('استخدم: setchannel <new|verify|prison> <#قناة>.')] });
     }
+  },
+};
+
+const setnew: Command = {
+  name: 'setnew',
+  description: 'Enable new-account gate for accounts younger than N days',
+  category: 'vip',
+  permission: 'admin',
+  usage: '<days>',
+  async execute({ message, guild, config, args }) {
+    const days = parseInt(args[0] ?? '', 10);
+    if (!days || days < 1) {
+      await message.reply({ embeds: [errorEmbed('حدد عدد الأيام: setnew <أيام> (مثال: setnew 7).')] });
+      return;
+    }
+    if (!config.setupDone && !config.newRoleId) {
+      await message.reply({ embeds: [errorEmbed('شغّل الإعداد الأولي (lsetup) أولاً.')] });
+      return;
+    }
+    await guild.roles.fetch().catch(() => {});
+
+    let newRoleId = config.newRoleId;
+    if (!newRoleId) {
+      const def = SYSTEM_ROLES.new;
+      const existing = guild.roles.cache.find((r) => r.name === def.name);
+      if (existing) {
+        newRoleId = existing.id;
+      } else {
+        const role = await guild.roles.create({
+          name: def.name,
+          color: def.color,
+          reason: 'SysBot new-account gate',
+        });
+        newRoleId = role.id;
+      }
+    }
+
+    const newChannelId =
+      config.newChannelId ?? (await ensureGateChannel(guild, NEW_CHANNEL_NAME, newRoleId));
+
+    await updateGuildConfig(guild.id, {
+      newEnabled: true,
+      newMinAgeDays: days,
+      newRoleId,
+      newChannelId,
+    });
+
+    await message.reply({
+      embeds: [
+        successEmbed(
+          `تم تفعيل نظام الحسابات الجديدة.\nالحد: أقل من ${days} يوم.\nقناة new: <#${newChannelId}>.`,
+        ),
+      ],
+    });
+  },
+};
+
+const unsetnew: Command = {
+  name: 'unsetnew',
+  description: 'Disable new-account gate',
+  category: 'vip',
+  permission: 'admin',
+  async execute({ message, guild, config }) {
+    if (!config.newEnabled) {
+      await message.reply({ embeds: [errorEmbed('نظام new غير مفعّل.')] });
+      return;
+    }
+    await updateGuildConfig(guild.id, { newEnabled: false });
+    await message.reply({ embeds: [successEmbed('تم تعطيل نظام الحسابات الجديدة.')] });
   },
 };
 
@@ -655,6 +727,8 @@ export const adminCommands: Command[] = [
   settings,
   setbanmsg,
   setchannel,
+  setnew,
+  unsetnew,
   setverify,
   unsetverify,
   setverifyreact,

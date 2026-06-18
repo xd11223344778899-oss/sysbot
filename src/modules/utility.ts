@@ -6,7 +6,6 @@ import { registry } from '../core/command-registry.js';
 
 const ping: Command = {
   name: 'ping',
-  aliases: ['help'],
   description: 'Bot connection speed',
   category: 'utility',
   permission: 'everyone',
@@ -20,6 +19,28 @@ const ping: Command = {
           .addFields(
             { name: 'الاستجابة', value: `${latency}ms`, inline: true },
             { name: 'WebSocket', value: `${Math.round(client.ws.ping)}ms`, inline: true },
+          ),
+      ],
+    });
+  },
+};
+
+const help: Command = {
+  name: 'help',
+  description: 'Bot help — lists command categories',
+  category: 'utility',
+  permission: 'everyone',
+  async execute({ message, config }) {
+    await message.reply({
+      embeds: [
+        baseEmbed()
+          .setTitle('مساعدة SysBot')
+          .setDescription(
+            [
+              `البرفكس: \`${config.prefix}\``,
+              `استخدم \`${config.prefix}commands\` لعرض جميع الأوامر.`,
+              `استخدم \`${config.prefix}vip\` لإعدادات الإدارة (للمالك/قائمة السماح).`,
+            ].join('\n'),
           ),
       ],
     });
@@ -267,6 +288,7 @@ const sticker: Command = {
 
 export const utilityCommands: Command[] = [
   ping,
+  help,
   commands,
   user,
   avatar,

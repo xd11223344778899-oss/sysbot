@@ -11,6 +11,8 @@ export const DEFAULT_ARABIC_ALIASES: Record<string, string> = {
   settings: 'اعدادات',
   setbanmsg: 'رسالةحظر',
   setchannel: 'قناة',
+  setnew: 'تفعيلجديد',
+  unsetnew: 'تعطيلجديد',
   setverify: 'تفعيلالتحقق',
   unsetverify: 'تعطيلالتحقق',
   setverifyreact: 'تفعيلرياكشن',

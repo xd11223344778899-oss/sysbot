@@ -1,4 +1,4 @@
-import { ChannelType, PermissionFlagsBits } from 'discord.js';
+import { ChannelType } from 'discord.js';
 import type { Command } from '../types/command.js';
 import { successEmbed, errorEmbed, baseEmbed } from '../shared/embeds.js';
 import { resolveMember, resolveRole } from '../shared/resolvers.js';
@@ -9,7 +9,9 @@ import { tryRunHeavyJob, isHeavyJobRunning } from '../services/heavy-job-queue.j
 import { completeMemberVerification } from '../services/member-gate.js';
 import { logModerationAction } from '../services/log-service.js';
 import { openInteractiveRolePanel } from '../services/interactive-role-panel.js';
-import { getGuildAdminRoleIds, openAdminRolePanel } from '../services/admin-role-panel.js';
+import { openAdminRolePanel } from '../services/admin-role-panel.js';
+import { canModifyRoleOnMember, validateRoleForAssignment } from '../services/mod-hierarchy.js';
+import { isRoleBlockedForMember } from '../services/block-service.js';
 
 const role: Command = {
   name: 'role',
@@ -18,10 +20,15 @@ const role: Command = {
   permission: 'mod',
   usage: '<@user> <@role>',
   async execute({ message, guild, member, args }) {
-    const target = await resolveMember(guild, args[0]);
+    const target = await resolveMember(guild, args[0], { punitive: true });
     const r = resolveRole(guild, args[1]);
     if (!target || !r) {
       await message.reply({ embeds: [errorEmbed('استخدم: role <@عضو> <@رول>.')] });
+      return;
+    }
+    const check = await canModifyRoleOnMember(member, target, r, guild);
+    if (!check.safe) {
+      await message.reply({ embeds: [errorEmbed(check.reason ?? 'لا يمكنك التعامل مع هذا الرول.')] });
       return;
     }
     if (target.roles.cache.has(r.id)) {
@@ -29,20 +36,10 @@ const role: Command = {
       await message.reply({ embeds: [successEmbed(`تم سحب ${r} من ${target}.`)] });
       return;
     }
-    const isOwner = member.id === guild.ownerId;
-    if (!isOwner && r.position >= member.roles.highest.position) {
+    if (await isRoleBlockedForMember(guild.id, target.id, r.id)) {
       await message.reply({
-        embeds: [errorEmbed('لا يمكنك إعطاء رول أعلى من رولك أو مساوٍ له.')],
+        embeds: [errorEmbed('هذا العضو محظور من استلام هذا الرول (block).')],
       });
-      return;
-    }
-    if (r.permissions.has(PermissionFlagsBits.Administrator)) {
-      await message.reply({ embeds: [errorEmbed('لا يمكنك إعطاء رول بصلاحية Administrator.')] });
-      return;
-    }
-    const adminRoleIds = await getGuildAdminRoleIds(guild.id);
-    if (adminRoleIds.has(r.id)) {
-      await message.reply({ embeds: [errorEmbed('لا يمكنك إعطاء رول مسجّل كرول إداري.')] });
       return;
     }
     await target.roles.add(r);
@@ -56,10 +53,15 @@ const rolemulti: Command = {
   category: 'roles',
   permission: 'admin',
   usage: '<@role> [all|members|bots] [remove]',
-  async execute({ message, guild, client, args }) {
+  async execute({ message, guild, member, client, args }) {
     const r = resolveRole(guild, args[0]);
     if (!r) {
       await message.reply({ embeds: [errorEmbed('حدد رول صحيح.')] });
+      return;
+    }
+    const safety = await validateRoleForAssignment(guild, r, member);
+    if (!safety.safe) {
+      await message.reply({ embeds: [errorEmbed(safety.reason ?? 'رول غير مسموح.')] });
       return;
     }
     if (isHeavyJobRunning(guild.id)) {
@@ -89,7 +91,7 @@ const autorole: Command = {
   category: 'roles',
   permission: 'admin',
   usage: '<@role>',
-  async execute({ message, guild, args, config }) {
+  async execute({ message, guild, member, args, config }) {
     const r = resolveRole(guild, args[0]);
     if (!r) {
       await message.reply({
@@ -99,6 +101,11 @@ const autorole: Command = {
             .setDescription(config.autoRoleIds.map((id) => `<@&${id}>`).join('\n') || 'لا يوجد'),
         ],
       });
+      return;
+    }
+    const safety = await validateRoleForAssignment(guild, r, member);
+    if (!safety.safe) {
+      await message.reply({ embeds: [errorEmbed(safety.reason ?? 'رول غير مسموح.')] });
       return;
     }
     const current = new Set(config.autoRoleIds);
@@ -292,11 +299,16 @@ const reactrole: Command = {
   category: 'roles',
   permission: 'admin',
   usage: '<messageId> <emoji> <@role>',
-  async execute({ message, guild, args }) {
+  async execute({ message, guild, member, args }) {
     const [msgId, emoji, roleToken] = args;
     const r = resolveRole(guild, roleToken);
     if (!msgId || !emoji || !r) {
       await message.reply({ embeds: [errorEmbed('استخدم: reactrole <معرف الرسالة> <إيموجي> <@رول>.')] });
+      return;
+    }
+    const safety = await validateRoleForAssignment(guild, r, member);
+    if (!safety.safe) {
+      await message.reply({ embeds: [errorEmbed(safety.reason ?? 'رول غير مسموح.')] });
       return;
     }
     const channel = message.channel;
