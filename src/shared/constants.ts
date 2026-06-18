@@ -70,6 +70,36 @@ export const RESTRICTED_CHANNELS = {
 export const NEW_CHANNEL_NAME = 'new';
 export const VERIFY_CHANNEL_NAME = 'verify';
 
+/**
+ * Baseline commands every configured admin role receives automatically
+ * (no Discord Administrator permission required).
+ */
+export const AUTO_ADMIN_BASELINE_COMMANDS = new Set([
+  'move',
+  'moveme',
+  'clear',
+  'mute',
+  'unmute',
+  'vmute',
+  'unvmute',
+  'warn',
+  'wlist',
+  'mymute',
+  'myprison',
+  'myvmute',
+  'mypenalties',
+  'records',
+  'role',
+  'info',
+  'link',
+  'color',
+  'colors',
+  'mcolors',
+  'change',
+  'avatar',
+  'banner',
+]);
+
 /** Mod commands grantable via interactive roles. */
 export const INTERACTIVE_GRANTABLE_COMMANDS = [
   'mute',

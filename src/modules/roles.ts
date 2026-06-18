@@ -1,4 +1,4 @@
-import { ChannelType } from 'discord.js';
+import { ChannelType, PermissionFlagsBits } from 'discord.js';
 import type { Command } from '../types/command.js';
 import { successEmbed, errorEmbed, baseEmbed } from '../shared/embeds.js';
 import { resolveMember, resolveRole } from '../shared/resolvers.js';
@@ -9,7 +9,7 @@ import { tryRunHeavyJob, isHeavyJobRunning } from '../services/heavy-job-queue.j
 import { completeMemberVerification } from '../services/member-gate.js';
 import { logModerationAction } from '../services/log-service.js';
 import { openInteractiveRolePanel } from '../services/interactive-role-panel.js';
-import { openAdminRolePanel } from '../services/admin-role-panel.js';
+import { getGuildAdminRoleIds, openAdminRolePanel } from '../services/admin-role-panel.js';
 
 const role: Command = {
   name: 'role',
@@ -17,7 +17,7 @@ const role: Command = {
   category: 'roles',
   permission: 'mod',
   usage: '<@user> <@role>',
-  async execute({ message, guild, args }) {
+  async execute({ message, guild, member, args }) {
     const target = await resolveMember(guild, args[0]);
     const r = resolveRole(guild, args[1]);
     if (!target || !r) {
@@ -27,10 +27,26 @@ const role: Command = {
     if (target.roles.cache.has(r.id)) {
       await target.roles.remove(r);
       await message.reply({ embeds: [successEmbed(`تم سحب ${r} من ${target}.`)] });
-    } else {
-      await target.roles.add(r);
-      await message.reply({ embeds: [successEmbed(`تم إعطاء ${r} لـ ${target}.`)] });
+      return;
     }
+    const isOwner = member.id === guild.ownerId;
+    if (!isOwner && r.position >= member.roles.highest.position) {
+      await message.reply({
+        embeds: [errorEmbed('لا يمكنك إعطاء رول أعلى من رولك أو مساوٍ له.')],
+      });
+      return;
+    }
+    if (r.permissions.has(PermissionFlagsBits.Administrator)) {
+      await message.reply({ embeds: [errorEmbed('لا يمكنك إعطاء رول بصلاحية Administrator.')] });
+      return;
+    }
+    const adminRoleIds = await getGuildAdminRoleIds(guild.id);
+    if (adminRoleIds.has(r.id)) {
+      await message.reply({ embeds: [errorEmbed('لا يمكنك إعطاء رول مسجّل كرول إداري.')] });
+      return;
+    }
+    await target.roles.add(r);
+    await message.reply({ embeds: [successEmbed(`تم إعطاء ${r} لـ ${target}.`)] });
   },
 };
 
