@@ -134,7 +134,7 @@ export async function openDeveloperPanel(message: Message<true>, guild: Guild): 
               [
                 `CMD_RATE_LIMIT_MAX: ${config.cmdRateLimitMax}`,
                 `CMD_RATE_LIMIT_WINDOW_MS: ${config.cmdRateLimitWindowMs}`,
-                `SHARD_COUNT: ${config.shardCount || 'auto/single'}`,
+                `BOT_SHARD_COUNT: ${config.shardCount || 'single process'}`,
                 `DEVELOPER_ID: ${config.developerId ? 'مضبوط' : 'غير مضبوط'}`,
               ].join('\n'),
             ),

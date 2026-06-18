@@ -29,3 +29,9 @@ if (missing.length) {
 if (process.env.LOG_PRETTY === 'true') {
   console.warn('Railway: set LOG_PRETTY=false to avoid logging issues in production.');
 }
+
+if (process.env.SHARD_COUNT === '0' || process.env.SHARD_COUNT === '1') {
+  console.warn(
+    'Railway: remove SHARD_COUNT (discord.js conflicts). Use BOT_SHARD_COUNT only when sharding (2+).',
+  );
+}

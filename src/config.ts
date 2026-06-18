@@ -61,9 +61,14 @@ export const config = {
   logPretty: process.env.LOG_PRETTY === 'true',
   cmdRateLimitMax: intEnv('CMD_RATE_LIMIT_MAX', 3),
   cmdRateLimitWindowMs: intEnv('CMD_RATE_LIMIT_WINDOW_MS', 5000),
-  /** 0 = single process; >1 = manual shard count; "auto" handled in sharding manager */
-  shardCount: intEnv('SHARD_COUNT', 0),
+  /** 0/1 = single process; 2+ = ShardingManager (use BOT_SHARD_COUNT, not SHARD_COUNT). */
+  shardCount: intEnv('BOT_SHARD_COUNT', intEnv('SHARD_COUNT', 0)),
 } as const;
+
+// discord.js reads process.env.SHARD_COUNT when creating Client; values < 2 crash startup.
+if (config.shardCount < 2) {
+  delete process.env.SHARD_COUNT;
+}
 
 export function isDeveloper(userId: string): boolean {
   return Boolean(config.developerId) && config.developerId === userId;

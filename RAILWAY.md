@@ -21,6 +21,8 @@
 | `LOG_LEVEL` | `info` |
 | `LOG_PRETTY` | `false` |
 
+> **لا تضف `SHARD_COUNT=0`** على Railway — discord.js يقرأه ويكسر التشغيل. للتقسيم استخدم `BOT_SHARD_COUNT=2` فما فوق، أو احذف المتغير للوضع العادي.
+
 ### ملاحظات
 
 - **لا تضف** `DATABASE_URL=file:...` — البوت يستخدم PostgreSQL فقط.
