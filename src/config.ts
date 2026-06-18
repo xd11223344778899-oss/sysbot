@@ -22,18 +22,32 @@ function intEnv(name: string, fallback: number): number {
   return Number.isFinite(n) ? n : fallback;
 }
 
-// Local dev fallback when DATABASE_URL is unset (matches docker-compose postgres service).
-if (!process.env.DATABASE_URL) {
+// Local dev fallback only — never on Railway (would mask a missing DATABASE_URL).
+const onRailway = Boolean(
+  process.env.RAILWAY_ENVIRONMENT ||
+    process.env.RAILWAY_PROJECT_ID ||
+    process.env.RAILWAY_SERVICE_ID,
+);
+
+if (!process.env.DATABASE_URL && !onRailway) {
   process.env.DATABASE_URL =
     'postgresql://sysbot:sysbot_local@localhost:5432/sysbot?schema=public';
 }
 
-if (process.env.RAILWAY_ENVIRONMENT) {
-  const url = process.env.DATABASE_URL ?? '';
-  if (!url.startsWith('postgresql://') && !url.startsWith('postgres://')) {
+if (onRailway) {
+  const url = process.env.DATABASE_URL?.trim() ?? '';
+  if (!url) {
     throw new Error(
-      'Railway: add a PostgreSQL service and link DATABASE_URL to the bot (SQLite is not supported).',
+      'Railway: DATABASE_URL is missing on the bot service. Link PostgreSQL (Add Reference → DATABASE_URL).',
     );
+  }
+  if (url.startsWith('file:') || /localhost|127\.0\.0\.1/.test(url)) {
+    throw new Error(
+      'Railway: DATABASE_URL must be Railway Postgres (${{Postgres.DATABASE_URL}}), not localhost or SQLite.',
+    );
+  }
+  if (!url.startsWith('postgresql://') && !url.startsWith('postgres://')) {
+    throw new Error('Railway: DATABASE_URL must be a postgresql:// connection string.');
   }
 }
 

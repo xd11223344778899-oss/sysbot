@@ -49,7 +49,19 @@ SQLITE_SOURCE_URL=file:../data/sysbot.db DATABASE_URL="<رابط Railway Postgre
 
 بدون ترحيل: البوت يعمل لكن كل سيرفر يحتاج `!vip` إعداداً من جديد.
 
-## 5) أوامر مفيدة بعد التشغيل
+## استكشاف الأخطاء
+
+### `Can't reach database server at localhost:5432`
+
+معناه أن **خدمة البوت** تستخدم رابطاً محلياً وليس Postgres على Railway.
+
+1. خدمة **البوت** → **Variables**
+2. احذف أي `DATABASE_URL` يحتوي `localhost` أو `file:`
+3. أضف `DATABASE_URL` = `${{Postgres.DATABASE_URL}}` (مرجع من Postgres)
+4. **Redeploy**
+
+القيمة الصحيحة تبدأ بـ `postgresql://` وتحتوي `postgres.railway.internal` (داخلياً) أو host عام من `DATABASE_PUBLIC_URL` للترحيل من جهازك فقط.
+
 
 - `!sysctrl` — لوحة المطوّر (فقط لـ `DEVELOPER_ID`)
 - `!vip` — الإعداد الأولي في السيرفر

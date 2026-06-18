@@ -9,8 +9,8 @@
   },
   "scripts": {
     "build": "prisma generate && tsc -p tsconfig.json",
-    "start": "prisma migrate deploy && node dist/index.js",
-    "start:prod": "prisma migrate deploy && node dist/index.js",
+    "start": "node scripts/check-database-url.mjs && prisma migrate deploy && node dist/index.js",
+    "start:prod": "node scripts/check-database-url.mjs && prisma migrate deploy && node dist/index.js",
     "dev": "prisma migrate deploy && tsx watch src/index.ts",
     "db:push": "prisma db push",
     "db:migrate": "prisma migrate deploy",
