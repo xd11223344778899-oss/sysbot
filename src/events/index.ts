@@ -60,6 +60,7 @@ import {
 } from '../shared/log-templates.js';
 import { getGuildConfig } from '../database/guild-config.js';
 import { prisma } from '../database/prisma.js';
+import { handleVerifyReaction } from '../services/verify-reaction.js';
 import { logger } from '../logger.js';
 
 export function registerEvents(client: Client): void {
@@ -526,6 +527,9 @@ async function handleVoice(client: Client, oldState: VoiceState, newState: Voice
 async function handleReactionRole(client: Client, reaction: any, userId: string, add: boolean) {
   try {
     if (reaction.partial) await reaction.fetch();
+    const handledVerify = await handleVerifyReaction(client, reaction, userId, add);
+    if (handledVerify) return;
+
     const guildId = reaction.message.guildId;
     if (!guildId) return;
     const emoji = reaction.emoji.id ?? reaction.emoji.name;

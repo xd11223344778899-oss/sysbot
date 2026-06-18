@@ -17,6 +17,7 @@ import {
   removeUnverifiedOverwritesFromGuild,
   formatVerifyOverwriteStats,
 } from '../services/verify-overwrites.js';
+import { normalizeEmojiKey } from '../services/verify-reaction.js';
 import { randomBytes } from 'node:crypto';
 
 function parseIds(value: string | null | undefined): string[] {
@@ -171,6 +172,11 @@ const settings: Command = {
               `فك العقوبة للمُعطي فقط: ${statusOnOff(cfg.punishOnlyAdmin)}`,
               `نظام new: ${cfg.newEnabled ? `مفعّل (${cfg.newMinAgeDays} يوم)` : 'معطّل'}`,
               `التفعيل: ${statusOnOff(cfg.verifyEnabled)}`,
+              `التفعيل بالرياكشن: ${statusOnOff(cfg.verifyReactionEnabled)}${
+                cfg.verifyReactionEnabled && cfg.verifyReactionMessageId
+                  ? ` (<#${cfg.verifyChannelId ?? '?'}> / ${cfg.verifyReactionEmoji})`
+                  : ''
+              }`,
               `رسالة الحظر: ${cfg.banMessage ?? 'افتراضية'}`,
             ].join('\n'),
           ),
@@ -287,7 +293,12 @@ const unsetverify: Command = {
       await message.reply({ embeds: [errorEmbed('نظام التحقق غير مفعّل.')] });
       return;
     }
-    await updateGuildConfig(guild.id, { verifyEnabled: false });
+    await updateGuildConfig(guild.id, {
+      verifyEnabled: false,
+      verifyReactionEnabled: false,
+      verifyReactionMessageId: null,
+      verifyReactionEmoji: null,
+    });
     let removed = 0;
     if (config.unverifiedRoleId) {
       removed = await removeUnverifiedOverwritesFromGuild(guild, config.unverifiedRoleId);
@@ -296,6 +307,114 @@ const unsetverify: Command = {
       embeds: [
         successEmbed(
           `تم تعطيل نظام التحقق.${removed ? `\nأُزيلت صلاحيات Unverified من ${removed} قناة.` : ''}`,
+        ),
+      ],
+    });
+  },
+};
+
+const setverifyreact: Command = {
+  name: 'setverifyreact',
+  description: 'Enable reaction verification on a message in verify channel',
+  category: 'vip',
+  permission: 'admin',
+  usage: '<emoji> [messageId] (أو رد على الرسالة في قناة التفعيل)',
+  async execute({ message, guild, args, config }) {
+    if (!config.verifyEnabled) {
+      await message.reply({ embeds: [errorEmbed('فعّل نظام التحقق أولاً (setverify).')] });
+      return;
+    }
+    if (!config.verifyChannelId) {
+      await message.reply({ embeds: [errorEmbed('اضبط قناة التفعيل: setchannel verify #قناة.')] });
+      return;
+    }
+    if (!config.unverifiedRoleId) {
+      await message.reply({ embeds: [errorEmbed('رول Unverified غير مضبوط. شغّل setverify أو lsetup.')] });
+      return;
+    }
+
+    let messageId = message.reference?.messageId;
+    let emojiRaw: string | undefined;
+
+    if (messageId) {
+      emojiRaw = args[0];
+    } else if (args.length >= 2) {
+      messageId = args[0]?.replace(/\D/g, '');
+      emojiRaw = args.slice(1).join(' ').trim();
+    } else {
+      await message.reply({
+        embeds: [
+          errorEmbed(
+            'رد على رسالة التفعيل في قناة التفعيل مع الإيموجي، أو: setverifyreact <معرف_الرسالة> <إيموجي>.',
+          ),
+        ],
+      });
+      return;
+    }
+
+    if (!messageId || !emojiRaw) {
+      await message.reply({ embeds: [errorEmbed('حدد الإيموجي ورسالة التفعيل.')] });
+      return;
+    }
+
+    const channel = await guild.channels.fetch(config.verifyChannelId).catch(() => null);
+    if (!channel?.isTextBased()) {
+      await message.reply({ embeds: [errorEmbed('قناة التفعيل غير صالحة.')] });
+      return;
+    }
+
+    const targetMsg = await channel.messages.fetch(messageId).catch(() => null);
+    if (!targetMsg) {
+      await message.reply({ embeds: [errorEmbed('لم أجد الرسالة في قناة التفعيل.')] });
+      return;
+    }
+    if (targetMsg.channelId !== config.verifyChannelId) {
+      await message.reply({ embeds: [errorEmbed('يجب أن تكون الرسالة داخل قناة التفعيل.')] });
+      return;
+    }
+
+    const emojiKey = normalizeEmojiKey(emojiRaw);
+    await targetMsg.react(emojiRaw).catch(() => {});
+
+    await updateGuildConfig(guild.id, {
+      verifyReactionEnabled: true,
+      verifyReactionMessageId: messageId,
+      verifyReactionEmoji: emojiKey,
+    });
+
+    await message.reply({
+      embeds: [
+        successEmbed(
+          [
+            `تم تفعيل التفعيل التلقائي بالرياكشن ${emojiRaw}.`,
+            `الرسالة: https://discord.com/channels/${guild.id}/${channel.id}/${messageId}`,
+            'الضغط على الرياكشن يفعّل العضو، وإزالته تُلغي التفعيل.',
+          ].join('\n'),
+        ),
+      ],
+    });
+  },
+};
+
+const unsetverifyreact: Command = {
+  name: 'unsetverifyreact',
+  description: 'Disable reaction-based verification',
+  category: 'vip',
+  permission: 'admin',
+  async execute({ message, guild, config }) {
+    if (!config.verifyReactionEnabled) {
+      await message.reply({ embeds: [errorEmbed('التفعيل بالرياكشن غير مفعّل.')] });
+      return;
+    }
+    await updateGuildConfig(guild.id, {
+      verifyReactionEnabled: false,
+      verifyReactionMessageId: null,
+      verifyReactionEmoji: null,
+    });
+    await message.reply({
+      embeds: [
+        successEmbed(
+          'تم إيقاف التفعيل بالرياكشن. التفعيل اليدوي (verify) ما زال يعمل إن كان نظام التحقق مفعّلاً.',
         ),
       ],
     });
@@ -538,6 +657,8 @@ export const adminCommands: Command[] = [
   setchannel,
   setverify,
   unsetverify,
+  setverifyreact,
+  unsetverifyreact,
   setpadmin,
   resons,
   pallow,

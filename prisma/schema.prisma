@@ -65,9 +65,12 @@ model Guild {
   newMessage    String?
 
   // Verification
-  verifyEnabled  Boolean @default(false)
-  verifyMessage  String?
-  verifiedRoleId String?
+  verifyEnabled           Boolean @default(false)
+  verifyMessage           String?
+  verifiedRoleId          String?
+  verifyReactionEnabled   Boolean @default(false)
+  verifyReactionMessageId String?
+  verifyReactionEmoji     String?
 
   // antijoin action for brand new accounts: "NONE" | "BAN" | "PRISON" | "KICK"
   antijoinEnabled    Boolean @default(false)

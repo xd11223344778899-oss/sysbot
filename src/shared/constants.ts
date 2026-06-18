@@ -134,6 +134,8 @@ export const OWNER_RESTRICTED_COMMANDS = new Set([
   'setchannel',
   'setverify',
   'unsetverify',
+  'setverifyreact',
+  'unsetverifyreact',
   'setpadmin',
   'resons',
   'pallow',

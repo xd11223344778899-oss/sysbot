@@ -29,6 +29,7 @@ export const HEAVY_COMMAND_NAMES = new Set([
   'lsetup',
   'lremove',
   'rolemulti',
+  'verifyall',
 ]);
 
 export function isHeavyCommand(name: string): boolean {

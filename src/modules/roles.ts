@@ -379,6 +379,47 @@ const verify: Command = {
   },
 };
 
+const verifyall: Command = {
+  name: 'verifyall',
+  description: 'Verify all unverified members at once',
+  category: 'roles',
+  permission: 'admin',
+  async execute({ message, guild, config }) {
+    if (!config.verifyEnabled || !config.unverifiedRoleId) {
+      await message.reply({
+        embeds: [errorEmbed('نظام التحقق غير مفعّل أو رول Unverified غير مضبوط.')],
+      });
+      return;
+    }
+    if (isHeavyJobRunning(guild.id)) {
+      await message.reply({ embeds: [errorEmbed('توجد عملية ثقيلة قيد التنفيذ بالفعل.')] });
+      return;
+    }
+
+    const status = await message.reply({
+      embeds: [successEmbed('جارٍ تفعيل جميع الأعضاء غير المفعّلين...')],
+    });
+
+    const started = await tryRunHeavyJob(guild.id, async () => {
+      await guild.members.fetch().catch(() => {});
+      let count = 0;
+      for (const member of guild.members.cache.values()) {
+        if (member.user.bot) continue;
+        if (!member.roles.cache.has(config.unverifiedRoleId!)) continue;
+        await completeMemberVerification(member, config);
+        count++;
+      }
+      await status
+        .edit({ embeds: [successEmbed(`تم تفعيل ${count} عضو دفعة واحدة.`)] })
+        .catch(() => {});
+    });
+
+    if (!started) {
+      await status.edit({ embeds: [errorEmbed('توجد عملية ثقيلة قيد التنفيذ.')] }).catch(() => {});
+    }
+  },
+};
+
 const iroles: Command = {
   name: 'iroles',
   description: 'Open interactive roles configuration panel',
@@ -415,6 +456,7 @@ export const roleCommands: Command[] = [
   reactrole,
   unnew,
   verify,
+  verifyall,
   iroles,
   aroles,
 ];

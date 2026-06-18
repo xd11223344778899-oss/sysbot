@@ -139,6 +139,32 @@ export async function completeMemberVerification(
   return result;
 }
 
+export interface ReverseVerificationResult {
+  restoredUnverified: boolean;
+  autorolesRemoved: string[];
+}
+
+/** Re-apply Unverified and remove auto-roles granted on verification (reaction toggle off). */
+export async function reverseMemberVerification(
+  member: GuildMember,
+  cfg: Pick<GuildConfig, 'unverifiedRoleId' | 'autoRoleIds'>,
+): Promise<ReverseVerificationResult> {
+  const result: ReverseVerificationResult = { restoredUnverified: false, autorolesRemoved: [] };
+
+  if (cfg.unverifiedRoleId && !member.roles.cache.has(cfg.unverifiedRoleId)) {
+    await member.roles.add(cfg.unverifiedRoleId).catch(() => {});
+    result.restoredUnverified = true;
+  }
+
+  const toRemove = cfg.autoRoleIds.filter((id) => member.roles.cache.has(id));
+  if (toRemove.length) {
+    await member.roles.remove(toRemove).catch(() => {});
+    result.autorolesRemoved = toRemove;
+  }
+
+  return result;
+}
+
 function defaultVerifyMessage(member: GuildMember): string {
   return `مرحباً ${member}، فعّل حسابك للدخول إلى السيرفر أو تواصل مع الإدارة.`;
 }
