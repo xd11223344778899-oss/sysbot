@@ -23,6 +23,7 @@ import { logModerationAction } from '../services/log-service.js';
 import { LOG_COLORS } from '../shared/log-embed.js';
 import { getGuildConfig } from '../database/guild-config.js';
 import { canModerate } from '../services/mod-hierarchy.js';
+import { sendVmuteCommandLog } from './voice-command-log.js';
 import type { PunishReason } from '../shared/punish-reasons.js';
 
 export type FlowPenaltyType = PenaltyType | 'KICK';
@@ -177,6 +178,15 @@ async function executeFlowPenalty(
       schedulePenaltyExpiry(interaction.client, penalty.id, expiresAt);
     }
     await logFlowAction(interaction, type, target, moderator, reason, durationMs, channelId);
+    if (type === 'VMUTE') {
+      void sendVmuteCommandLog(interaction.client, {
+        moderator,
+        target,
+        kind: 'mute',
+        reason,
+        actionAt: expiresAt ?? penalty.createdAt,
+      });
+    }
     const when = expiresAt ? ` لمدة ${formatDurationMs(durationMs)}` : '';
     const embed = successEmbed(`تم ${typeLabel(type)} ${target}${when}.`);
     if (interaction.isModalSubmit()) await interaction.editReply({ embeds: [embed] });

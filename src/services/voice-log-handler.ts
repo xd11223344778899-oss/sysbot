@@ -7,6 +7,7 @@ import { matchAuditEntry } from './log-audit.js';
 import {
   consumeVoiceCommandLogContext,
   shouldSkipVmuteGuardLog,
+  wasCommandVoiceLogSent,
 } from './voice-log-context.js';
 import { sendVoiceLog } from './voice-log-sender.js';
 import {
@@ -133,6 +134,9 @@ async function logServerMuteChange(
   const muted = Boolean(newState.serverMute);
 
   if (shouldSkipVmuteGuardLog(guildId, member.id)) return;
+
+  const action: 'mute' | 'unmute' = muted ? 'mute' : 'unmute';
+  if (wasCommandVoiceLogSent(guildId, member.id, action)) return;
 
   const audit = await matchAuditEntry(newState.guild, AuditLogEvent.MemberUpdate, member.id);
   const resolved = await resolveServerVoiceModLog(guildId, member.id, muted);

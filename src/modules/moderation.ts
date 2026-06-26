@@ -17,6 +17,7 @@ import { prisma } from '../database/prisma.js';
 import { canModerate } from '../services/mod-hierarchy.js';
 import { encodeBlockReason } from '../services/block-service.js';
 import { buildCrimesEmbed } from '../services/crime-records.js';
+import { sendVmuteCommandLog } from '../services/voice-command-log.js';
 import { PENALTY_TYPES } from '../shared/enums.js';
 
 const PENALTY_LOG_TITLE: Partial<Record<PenaltyType, string>> = {
@@ -98,6 +99,15 @@ function makePenaltyCommand(
           event: `تم تطبيق العقوبة${when}.`,
           color: LOG_COLORS.danger,
         });
+        if (type === 'VMUTE') {
+          void sendVmuteCommandLog(ctx.client, {
+            moderator: ctx.member,
+            target,
+            kind: 'mute',
+            reason,
+            actionAt: expiresAt ?? penalty.createdAt,
+          });
+        }
       } catch (err) {
         const code = (err as Error).message;
         if (code === 'ROLE_NOT_CONFIGURED') {
@@ -148,6 +158,14 @@ function makeLiftCommand(name: string, type: PenaltyType, description: string, m
           event: 'تم رفع العقوبة عن العضو.',
           color: LOG_COLORS.success,
         });
+        if (type === 'VMUTE') {
+          void sendVmuteCommandLog(ctx.client, {
+            moderator: ctx.member,
+            target,
+            kind: 'unmute',
+            actionAt: new Date(),
+          });
+        }
       }
       await ctx.message.reply({
         embeds: [lifted ? successEmbed(`${msg} ${target}.`) : errorEmbed('لا توجد عقوبة فعّالة.')],

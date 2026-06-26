@@ -1,5 +1,5 @@
 import { EmbedBuilder } from 'discord.js';
-import { VOICE_LOG_ICONS, type VoiceLogIconKey } from './log-assets.js';
+import { type VoiceLogIconKey, getVoiceLogIconUrl } from './log-assets.js';
 import { formatVoiceLogTime } from './log-time.js';
 import { mentionOnly } from './log-embed.js';
 
@@ -42,8 +42,8 @@ const ICON_KEYS: Record<VoiceLogKind, VoiceLogIconKey> = {
   change: 'change',
   move: 'move',
   disconnect: 'disconnect',
-  selfMute: 'self',
-  selfDeafen: 'self',
+  selfMute: 'selfMute',
+  selfDeafen: 'selfDeaf',
 };
 
 const ACTION_AT_LABELS: Partial<Record<VoiceLogKind, string>> = {
@@ -70,6 +70,8 @@ export interface VoiceLogEmbedInput {
   actor: VoiceLogParticipant;
   target: VoiceLogParticipant;
   channel?: VoiceLogChannelRef | null;
+  /** When true, show "Not in voice channel" for In field */
+  notInVoice?: boolean;
   source: 'command' | 'manual' | 'self';
   reason?: string | null;
   actionAt?: Date | null;
@@ -82,13 +84,22 @@ function displayName(p: VoiceLogParticipant): string {
 }
 
 export function buildVoiceLogEmbed(input: VoiceLogEmbedInput): EmbedBuilder {
+  const targetDisplay = displayName(input.target);
+
   const lines: string[] = [
     `To : ${mentionOnly(input.target.id)}`,
+    `Display : ${targetDisplay}`,
     `By : ${mentionOnly(input.actor.id)}`,
   ];
 
-  if (input.channel) {
+  if (input.notInVoice) {
+    lines.push('In : Not in voice channel');
+  } else if (input.channel) {
     lines.push(`In : 🔊 ${input.channel.name}`);
+  }
+
+  if (input.source === 'command') {
+    lines.push('Via : Bot Command');
   }
 
   if (input.source === 'command' && input.reason?.trim()) {
@@ -100,7 +111,7 @@ export function buildVoiceLogEmbed(input: VoiceLogEmbedInput): EmbedBuilder {
     lines.push(`${atLabel} : ${formatVoiceLogTime(input.actionAt)}`);
   }
 
-  const thumb = VOICE_LOG_ICONS[ICON_KEYS[input.kind]];
+  const thumb = getVoiceLogIconUrl(ICON_KEYS[input.kind]);
   const occurredAt = input.occurredAt ?? new Date();
 
   const embed = new EmbedBuilder()

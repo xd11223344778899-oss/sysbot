@@ -60,3 +60,34 @@ export function shouldSkipVmuteGuardLog(guildId: string, userId: string): boolea
   }
   return true;
 }
+
+/** Prevents duplicate logs when command already emitted voice log. */
+const commandSent = new Map<string, number>();
+const COMMAND_SENT_TTL_MS = 15_000;
+
+function commandSentKey(guildId: string, userId: string, action: VoiceLogCommandAction): string {
+  return `${guildId}:${userId}:${action}`;
+}
+
+export function markCommandVoiceLogSent(
+  guildId: string,
+  userId: string,
+  action: VoiceLogCommandAction,
+): void {
+  commandSent.set(commandSentKey(guildId, userId, action), Date.now() + COMMAND_SENT_TTL_MS);
+}
+
+export function wasCommandVoiceLogSent(
+  guildId: string,
+  userId: string,
+  action: VoiceLogCommandAction,
+): boolean {
+  const k = commandSentKey(guildId, userId, action);
+  const until = commandSent.get(k);
+  if (!until) return false;
+  if (until < Date.now()) {
+    commandSent.delete(k);
+    return false;
+  }
+  return true;
+}
