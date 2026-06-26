@@ -18,7 +18,7 @@ import {
   type PermSyncStats,
 } from './channel-permissions.js';
 import { normalizeAllSystemRoles, type RoleNormalizeStats } from './system-role-permissions.js';
-import { SYSTEM_ROLES, LOG_EVENTS, CATEGORY_NAMES } from '../shared/constants.js';
+import { SYSTEM_ROLES, LOG_EVENTS, LOG_CATEGORIES } from '../shared/constants.js';
 import { logger } from '../logger.js';
 
 export interface SetupProgress {
@@ -62,16 +62,21 @@ async function ensureCategory(
   return { category, created: true };
 }
 
-function logChannelNameForEvent(eventType: string, compact: boolean): string {
-  const def = LOG_EVENTS.find((e) => e.type === eventType);
-  if (!def) return `log-${eventType}`;
-  return compact ? `log-${def.group}` : def.channelName;
+function eventCategoryKey(event: (typeof LOG_EVENTS)[number]): keyof typeof LOG_CATEGORIES {
+  return event.category ?? 'logs';
+}
+
+function logChannelNameForEvent(event: (typeof LOG_EVENTS)[number], compact: boolean): string {
+  if (!compact) return event.channelName;
+  return `log-${event.group}`;
 }
 
 interface LogChannelEnsureResult {
   rows: { eventType: string; channelId: string }[];
   created: number;
   ok: number;
+  categoriesCreated: number;
+  categoriesOk: number;
 }
 
 /**
@@ -80,7 +85,6 @@ interface LogChannelEnsureResult {
  */
 async function ensureLogChannels(
   guild: Guild,
-  logCategory: CategoryChannel,
   compact: boolean,
   reuseExisting: boolean,
 ): Promise<LogChannelEnsureResult> {
@@ -88,7 +92,13 @@ async function ensureLogChannels(
   const rows: { eventType: string; channelId: string }[] = [];
   let created = 0;
   let ok = 0;
+  let categoriesCreated = 0;
+  let categoriesOk = 0;
+
+  const categoryChannels = new Map<keyof typeof LOG_CATEGORIES, CategoryChannel>();
   const groupChannel = new Map<string, string>();
+  const nameChannelInCategory = new Map<string, string>();
+
   const dbRows = reuseExisting
     ? await prisma.guildLogChannel.findMany({ where: { guildId: guild.id } })
     : [];
@@ -98,12 +108,26 @@ async function ensureLogChannels(
     for (const event of LOG_EVENTS) {
       const cid = dbByEvent.get(event.type);
       if (cid && guild.channels.cache.has(cid)) {
-        groupChannel.set(event.group, cid);
+        groupChannel.set(`${eventCategoryKey(event)}:${event.group}`, cid);
+        nameChannelInCategory.set(`${eventCategoryKey(event)}:${event.channelName}`, cid);
       }
     }
   }
 
+  async function getCategory(key: keyof typeof LOG_CATEGORIES): Promise<CategoryChannel> {
+    const cached = categoryChannels.get(key);
+    if (cached) return cached;
+    const name = LOG_CATEGORIES[key];
+    const { category, created: catCreated } = await ensureCategory(guild, name);
+    categoryChannels.set(key, category);
+    if (catCreated) categoriesCreated += 1;
+    else categoriesOk += 1;
+    return category;
+  }
+
   for (const event of LOG_EVENTS) {
+    const catKey = eventCategoryKey(event);
+    const parent = await getCategory(catKey);
     let channelId: string | undefined;
 
     if (reuseExisting) {
@@ -114,19 +138,29 @@ async function ensureLogChannels(
       }
     }
 
+    const channelName = logChannelNameForEvent(event, compact);
+    const nameKey = `${catKey}:${channelName}`;
+
     if (!channelId && reuseExisting) {
-      const byName = logCategory.children.cache.find(
-        (c) => c.name === logChannelNameForEvent(event.type, compact),
-      );
+      const byName = parent.children.cache.find((c) => c.name === channelName);
       if (byName) {
         channelId = byName.id;
         ok += 1;
-        if (compact) groupChannel.set(event.group, byName.id);
+        nameChannelInCategory.set(nameKey, byName.id);
+        if (compact) groupChannel.set(`${catKey}:${event.group}`, byName.id);
+      }
+    }
+
+    if (!channelId && !compact) {
+      const shared = nameChannelInCategory.get(nameKey);
+      if (shared && guild.channels.cache.has(shared)) {
+        channelId = shared;
+        ok += 1;
       }
     }
 
     if (!channelId && compact) {
-      const grouped = groupChannel.get(event.group);
+      const grouped = groupChannel.get(`${catKey}:${event.group}`);
       if (grouped) {
         channelId = grouped;
         ok += 1;
@@ -135,9 +169,9 @@ async function ensureLogChannels(
 
     if (!channelId) {
       const ch = await guild.channels.create({
-        name: logChannelNameForEvent(event.type, compact),
+        name: channelName,
         type: ChannelType.GuildText,
-        parent: logCategory.id,
+        parent: parent.id,
         permissionOverwrites: [
           { id: guild.roles.everyone.id, deny: [PermissionFlagsBits.ViewChannel] },
           {
@@ -148,13 +182,14 @@ async function ensureLogChannels(
       });
       channelId = ch.id;
       created += 1;
-      if (compact) groupChannel.set(event.group, channelId);
+      nameChannelInCategory.set(nameKey, channelId);
+      if (compact) groupChannel.set(`${catKey}:${event.group}`, channelId);
     }
 
     rows.push({ eventType: event.type, channelId });
   }
 
-  return { rows, created, ok };
+  return { rows, created, ok, categoriesCreated, categoriesOk };
 }
 
 async function persistSetup(
@@ -210,17 +245,12 @@ export async function runFullSetup(guild: Guild): Promise<SetupProgress> {
 
   await normalizeAllSystemRoles(guild, roleUpdates);
 
-  const { category: logCategory } = await ensureCategory(guild, CATEGORY_NAMES.logs);
-  const { category: modCategory } = await ensureCategory(guild, CATEGORY_NAMES.mod);
+  const { category: logCategory } = await ensureCategory(guild, LOG_CATEGORIES.logs);
+  const { category: modCategory } = await ensureCategory(guild, LOG_CATEGORIES.mod);
 
   const cfg = await prisma.guild.findUnique({ where: { id: guild.id } });
   const compact = cfg?.logMode === 'COMPACT';
-  const { rows: logChannelRows, created } = await ensureLogChannels(
-    guild,
-    logCategory,
-    compact,
-    false,
-  );
+  const { rows: logChannelRows, created } = await ensureLogChannels(guild, compact, false);
   progress.logChannelsCreated = created;
 
   const blackId = roleUpdates[SYSTEM_ROLES.blacklisted.key];
@@ -272,28 +302,31 @@ export async function runSetupSync(guild: Guild): Promise<SetupSyncResult> {
 
   const { category: logCategory, created: logCatCreated } = await ensureCategory(
     guild,
-    CATEGORY_NAMES.logs,
+    LOG_CATEGORIES.logs,
   );
   if (logCatCreated) result.categoriesCreated += 1;
   else result.categoriesOk += 1;
 
   const { category: modCategory, created: modCatCreated } = await ensureCategory(
     guild,
-    CATEGORY_NAMES.mod,
+    LOG_CATEGORIES.mod,
   );
   if (modCatCreated) result.categoriesCreated += 1;
   else result.categoriesOk += 1;
 
   const cfg = await prisma.guild.findUnique({ where: { id: guild.id } });
   const compact = cfg?.logMode === 'COMPACT';
-  const { rows: logChannelRows, created, ok } = await ensureLogChannels(
-    guild,
-    logCategory,
-    compact,
-    true,
-  );
+  const {
+    rows: logChannelRows,
+    created,
+    ok,
+    categoriesCreated: logCatsCreated,
+    categoriesOk: logCatsOk,
+  } = await ensureLogChannels(guild, compact, true);
   result.logChannelsCreated = created;
   result.logChannelsOk = ok;
+  result.categoriesCreated += logCatsCreated;
+  result.categoriesOk += logCatsOk;
 
   const blackId = roleUpdates[SYSTEM_ROLES.blacklisted.key];
   const prisonId = roleUpdates[SYSTEM_ROLES.prison.key];

@@ -1,4 +1,4 @@
-import { ChannelType, type Client, type EmbedBuilder } from 'discord.js';
+import { ChannelType, type AttachmentBuilder, type Client, type EmbedBuilder } from 'discord.js';
 import { prisma } from '../database/prisma.js';
 import { logger } from '../logger.js';
 import { buildLogEmbed, LOG_COLORS, userMention, type LogEmbedInput } from '../shared/log-embed.js';
@@ -9,6 +9,7 @@ export async function sendLog(
   guildId: string,
   eventType: string,
   embed: EmbedBuilder,
+  files: AttachmentBuilder[] = [],
 ): Promise<void> {
   const row = await prisma.guildLogChannel.findUnique({
     where: { guildId_eventType: { guildId, eventType } },
@@ -18,7 +19,7 @@ export async function sendLog(
   const channel = await client.channels.fetch(row.channelId).catch(() => null);
   if (!channel || channel.type !== ChannelType.GuildText) return;
 
-  await channel.send({ embeds: [embed] }).catch((err) => {
+  await channel.send({ embeds: [embed], files }).catch((err) => {
     logger.warn({ err: err?.message, eventType, guildId }, 'Failed to send log');
   });
 }

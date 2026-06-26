@@ -16,6 +16,7 @@ import { LOG_COLORS } from '../shared/log-embed.js';
 import { prisma } from '../database/prisma.js';
 import { canModerate } from '../services/mod-hierarchy.js';
 import { encodeBlockReason } from '../services/block-service.js';
+import { buildCrimesEmbed } from '../services/crime-records.js';
 import { PENALTY_TYPES } from '../shared/enums.js';
 
 const PENALTY_LOG_TITLE: Partial<Record<PenaltyType, string>> = {
@@ -485,22 +486,17 @@ const penalties: Command = {
 
 const records: Command = {
   name: 'records',
-  description: 'User records',
+  description: 'User full punishment record',
+  aliases: ['crimes', 'fullrecord', 'سجلكامل'],
   category: 'moderation',
   permission: 'mod',
   usage: '<@user>',
   async execute(ctx) {
     const target = (await resolveMember(ctx.guild, ctx.args[0])) ?? ctx.member;
     const all = await getUserPenalties(ctx.guild.id, target.id);
-    const warns = await prisma.warn.count({ where: { guildId: ctx.guild.id, userId: target.id } });
-    const grouped = all.reduce<Record<string, number>>((acc, p) => {
-      acc[p.type] = (acc[p.type] ?? 0) + 1;
-      return acc;
-    }, {});
-    const lines = Object.entries(grouped).map(([t, c]) => `${t}: ${c}`);
-    lines.push(`WARN: ${warns}`);
     await ctx.message.reply({
-      embeds: [baseEmbed().setTitle(`سجل ${target.user.username}`).setDescription(lines.join('\n'))],
+      embeds: [buildCrimesEmbed(target.user.username, all)],
+      allowedMentions: { users: all.map((p) => p.moderatorId) },
     });
   },
 };

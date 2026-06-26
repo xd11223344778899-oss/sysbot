@@ -5,6 +5,7 @@ import { getGuildConfig } from '../database/guild-config.js';
 import { logger } from '../logger.js';
 import { markVmuteLifted } from './vmute-guard.js';
 import { canModerate } from './mod-hierarchy.js';
+import { stashVoiceCommandLogContext } from './voice-log-context.js';
 
 const ROLE_KEY: Partial<
   Record<PenaltyType, 'mutedRoleId' | 'prisonRoleId' | 'blacklistedRoleId'>
@@ -81,6 +82,17 @@ export async function applyPenalty({
     data: { guildId, userId: member.id, type, moderatorId, reason, expiresAt: expiresAt ?? null },
   });
 
+  if (type === 'VMUTE') {
+    stashVoiceCommandLogContext({
+      guildId,
+      userId: member.id,
+      moderatorId,
+      reason,
+      expiresAt: expiresAt ?? null,
+      action: 'mute',
+    });
+  }
+
   logger.info({ guildId, userId: member.id, type }, 'Penalty applied');
   return penalty;
 }
@@ -92,7 +104,22 @@ export async function liftPenalty(
   type: PenaltyType,
   liftedById: string,
 ): Promise<boolean> {
+  const active = await prisma.penalty.findFirst({
+    where: { guildId, userId: member.id, type, active: true },
+    orderBy: { createdAt: 'desc' },
+  });
+
   if (type === 'VMUTE') {
+    if (active) {
+      stashVoiceCommandLogContext({
+        guildId,
+        userId: member.id,
+        moderatorId: liftedById,
+        reason: active.reason,
+        expiresAt: active.expiresAt,
+        action: 'unmute',
+      });
+    }
     markVmuteLifted(member.id);
     if (member.voice.channel) {
       await member.voice.setMute(false).catch(() => {});
@@ -106,10 +133,6 @@ export async function liftPenalty(
     }
   }
 
-  const active = await prisma.penalty.findFirst({
-    where: { guildId, userId: member.id, type, active: true },
-    orderBy: { createdAt: 'desc' },
-  });
   if (!active) return false;
 
   await prisma.penalty.update({

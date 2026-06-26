@@ -1,5 +1,5 @@
 import type { EmbedBuilder } from 'discord.js';
-import { buildLogEmbed, LOG_COLORS, userMention } from './log-embed.js';
+import { buildLogEmbed, buildProtectionAlertEmbed, LOG_COLORS, userMention } from './log-embed.js';
 
 export function channelMention(channelId: string): string {
   return `<#${channelId}>`;
@@ -303,7 +303,7 @@ export function voiceJoinLog(memberId: string, memberTag: string, channelId: str
     to: channelMention(channelId),
     event: 'دخل العضو إلى القناة الصوتية.',
   });
-}
+} 
 
 export function voiceLeaveLog(memberId: string, memberTag: string, channelId: string): EmbedBuilder {
   return buildLogEmbed({
@@ -409,35 +409,47 @@ export function voiceDeafenLog(opts: {
 
 // --- Moderation / protection ---
 
-export function antiDeleteLog(
-  memberId: string,
-  memberTag: string,
-  byId: string,
-  targetType: 'channelDelete' | 'roleDelete',
-  reason?: string,
-): EmbedBuilder {
-  return buildLogEmbed({
-    title: 'حماية — حذف',
-    color: LOG_COLORS.danger,
-    by: userMention(byId),
-    to: userMention(memberId, memberTag),
-    reason,
-    event: `تم تجريد العضو بعد ${targetType === 'channelDelete' ? 'حذف قناة' : 'حذف رول'}.`,
-  });
-}
+export type ProtectionViolation =
+  | 'channelCreate'
+  | 'channelDelete'
+  | 'roleDelete'
+  | 'rolePerms';
 
-export function antiPermsLog(
-  memberId: string,
-  memberTag: string,
-  byId: string,
-  reason?: string,
-): EmbedBuilder {
-  return buildLogEmbed({
-    title: 'حماية — صلاحيات',
-    color: LOG_COLORS.danger,
-    by: userMention(byId),
-    to: userMention(memberId, memberTag),
-    reason,
-    event: 'تم تجريد العضو بعد تعديل صلاحيات رول.',
+const PROTECTION_ATTEMPT_TEXT: Record<ProtectionViolation, string> = {
+  channelCreate: "Was trying to create a 1 channel's",
+  channelDelete: 'Was trying to delete a channel',
+  roleDelete: 'Was trying to delete a role',
+  rolePerms: 'Was trying to edit role permissions',
+};
+
+const PROTECTION_CODE_TITLE: Record<ProtectionViolation, string> = {
+  channelCreate: 'Missing Permissions',
+  channelDelete: 'Anti Delete',
+  roleDelete: 'Anti Delete',
+  rolePerms: 'Anti Perms',
+};
+
+export function protectionAlertLog(opts: {
+  guildName: string;
+  guildIconUrl?: string | null;
+  memberId: string;
+  violation: ProtectionViolation;
+  strikeCount: number;
+  strikeLimit: number;
+  auditReason?: string;
+  thumbnailUrl?: string | null;
+}): EmbedBuilder {
+  const detail = opts.auditReason?.trim()
+    ? `❌ ${opts.auditReason.trim()}`
+    : `❌ ${opts.strikeCount}/${opts.strikeLimit} Strikes`;
+
+  return buildProtectionAlertEmbed({
+    guildName: opts.guildName,
+    guildIconUrl: opts.guildIconUrl,
+    targetId: opts.memberId,
+    attemptText: PROTECTION_ATTEMPT_TEXT[opts.violation],
+    codeTitle: PROTECTION_CODE_TITLE[opts.violation],
+    codeDetail: detail,
+    thumbnailUrl: opts.thumbnailUrl,
   });
 }

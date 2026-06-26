@@ -18,7 +18,16 @@ export interface LogEventDef {
   channelName: string;
   label: string;
   group: string;
+  /** Discord category key — defaults to `logs`. */
+  category?: keyof typeof LOG_CATEGORIES;
 }
+
+export const LOG_CATEGORIES = {
+  logs: 'SysBot Logs',
+  activeLogs: 'active logs',
+  mod: 'SysBot System',
+  restricted: 'SysBot Restricted',
+} as const;
 
 export const LOG_EVENTS: LogEventDef[] = [
   { type: 'memberJoin', channelName: 'log-join', label: 'انضمام عضو', group: 'members' },
@@ -38,26 +47,37 @@ export const LOG_EVENTS: LogEventDef[] = [
   { type: 'channelUpdate', channelName: 'log-channel-update', label: 'تعديل قناة', group: 'channels' },
   { type: 'messageDelete', channelName: 'log-msg-delete', label: 'حذف رسالة', group: 'messages' },
   { type: 'messageEdit', channelName: 'log-msg-edit', label: 'تعديل رسالة', group: 'messages' },
-  { type: 'voiceJoin', channelName: 'log-voice-join', label: 'دخول صوتي', group: 'voice' },
-  { type: 'voiceLeave', channelName: 'log-voice-leave', label: 'خروج صوتي', group: 'voice' },
-  { type: 'voiceChange', channelName: 'log-voice-change', label: 'تغيير روم صوتي', group: 'voice' },
-  { type: 'voiceMove', channelName: 'log-voice-move', label: 'نقل صوتي', group: 'voice' },
-  { type: 'voiceMute', channelName: 'log-voice-mute', label: 'كتم صوتي', group: 'voice' },
-  { type: 'voiceDeafen', channelName: 'log-voice-deafen', label: 'صم صوتي', group: 'voice' },
-  { type: 'voiceDisconnect', channelName: 'log-voice-disconnect', label: 'فصل صوتي', group: 'voice' },
+  { type: 'voiceJoin', channelName: 'log-join-channel', label: 'دخول صوتي', group: 'active-voice', category: 'activeLogs' },
+  { type: 'voiceLeave', channelName: 'log-leave-channel', label: 'خروج صوتي', group: 'active-voice', category: 'activeLogs' },
+  { type: 'voiceChange', channelName: 'log-change-channel', label: 'تغيير روم صوتي', group: 'active-voice', category: 'activeLogs' },
+  { type: 'voiceMove', channelName: 'log-move-members', label: 'نقل صوتي', group: 'active-voice', category: 'activeLogs' },
+  { type: 'voiceDisconnect', channelName: 'log-discounect-members', label: 'فصل صوتي', group: 'active-voice', category: 'activeLogs' },
+  { type: 'voiceMute', channelName: 'log-voice-mute', label: 'كتم صوتي', group: 'active-voice', category: 'activeLogs' },
+  { type: 'voiceUnmute', channelName: 'log-un-voice-mute', label: 'فك كتم صوتي', group: 'active-voice', category: 'activeLogs' },
+  { type: 'voiceDeafen', channelName: 'log-voice-deafen', label: 'صم صوتي', group: 'active-voice', category: 'activeLogs' },
+  { type: 'voiceUndeafen', channelName: 'log-un-voice-deafen', label: 'فك صم صوتي', group: 'active-voice', category: 'activeLogs' },
+  { type: 'voiceSelfMute', channelName: 'log-self-voice-actions', label: 'كتم ذاتي', group: 'active-voice', category: 'activeLogs' },
+  { type: 'voiceSelfDeafen', channelName: 'log-self-voice-actions', label: 'صم ذاتي', group: 'active-voice', category: 'activeLogs' },
   { type: 'serverUpdate', channelName: 'log-server', label: 'تعديل السيرفر', group: 'server' },
   { type: 'inviteCreate', channelName: 'log-invite-create', label: 'إنشاء دعوة', group: 'server' },
   { type: 'inviteDelete', channelName: 'log-invite-delete', label: 'حذف دعوة', group: 'server' },
   { type: 'emojiUpdate', channelName: 'log-emoji', label: 'تعديل إيموجي', group: 'server' },
   { type: 'threadCreate', channelName: 'log-thread', label: 'إنشاء ثريد', group: 'channels' },
   { type: 'modAction', channelName: 'log-mods', label: 'إجراءات الإدارة', group: 'moderation' },
+  {
+    type: 'protection',
+    channelName: 'log-protection',
+    label: 'تنبيهات الحماية',
+    group: 'protection',
+  },
   { type: 'botJoin', channelName: 'log-bots', label: 'دخول بوت', group: 'server' },
 ];
 
 export const CATEGORY_NAMES = {
-  logs: 'SysBot Logs',
-  mod: 'SysBot System',
-  restricted: 'SysBot Restricted',
+  logs: LOG_CATEGORIES.logs,
+  activeLogs: LOG_CATEGORIES.activeLogs,
+  mod: LOG_CATEGORIES.mod,
+  restricted: LOG_CATEGORIES.restricted,
 } as const;
 
 export const RESTRICTED_CHANNELS = {

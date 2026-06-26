@@ -1,3 +1,4 @@
+import { markVmuteGuardSkip } from './voice-log-context.js';
 import type { GuildMember, VoiceState } from 'discord.js';
 import { prisma } from '../database/prisma.js';
 import { logger } from '../logger.js';
@@ -31,6 +32,7 @@ export async function enforceVmute(member: GuildMember): Promise<boolean> {
   if (!member.voice.channel) return false;
   if (member.voice.serverMute) return true;
   try {
+    markVmuteGuardSkip(member.guild.id, member.id);
     await member.voice.setMute(true, 'SysBot: عقوبة كتم صوتي نشطة');
     return true;
   } catch (err) {
@@ -52,6 +54,7 @@ export async function onVmuteVoiceUpdate(oldState: VoiceState, newState: VoiceSt
 
   if (!newState.serverMute) {
     try {
+      markVmuteGuardSkip(newState.guild.id, member.id);
       await member.voice.setMute(true, 'SysBot: إعادة كتم — العقوبة لا تزال نشطة');
     } catch (err) {
       logger.warn({ err, userId: member.id }, 'vmute re-apply failed');

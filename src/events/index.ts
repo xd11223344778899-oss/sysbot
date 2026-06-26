@@ -17,10 +17,7 @@ import { recordChannelMessage } from '../services/spam-intelligence.js';
 import { handleMemberJoin } from '../services/member-gate.js';
 import { sendLog } from '../services/log-service.js';
 import { formatExecutor, matchAuditEntry } from '../services/log-audit.js';
-import {
-  classifyVoiceChannelChange,
-  VOICE_LOG_EVENT_TYPE,
-} from '../services/voice-log-classifier.js';
+import { handleVoiceLogging } from '../services/voice-log-handler.js';
 import { handlePunishmentInteraction } from '../services/punishment-flow.js';
 import { handleVoiceMoveConsentInteraction } from '../services/voice-move-consent.js';
 import { onVmuteVoiceUpdate } from '../services/vmute-guard.js';
@@ -30,8 +27,7 @@ import { isProtectedRoleMember } from '../services/collection-service.js';
 import { validateRoleForAssignment } from '../services/mod-hierarchy.js';
 import { handleProtectionModal } from '../services/protection-panel.js';
 import {
-  antiDeleteLog,
-  antiPermsLog,
+  protectionAlertLog,
   botJoinLog,
   channelCreateLog,
   channelDeleteLog,
@@ -53,13 +49,6 @@ import {
   roleUpdateLog,
   serverUpdateLog,
   threadCreateLog,
-  voiceChangeLog,
-  voiceDeafenLog,
-  voiceDisconnectLog,
-  voiceJoinLog,
-  voiceLeaveLog,
-  voiceMoveLog,
-  voiceMuteLog,
 } from '../shared/log-templates.js';
 import { getGuildConfig } from '../database/guild-config.js';
 import { prisma } from '../database/prisma.js';
@@ -428,51 +417,6 @@ async function handleMemberUpdate(
   }
 }
 
-function buildVoiceChannelLog(
-  classification: Awaited<ReturnType<typeof classifyVoiceChannelChange>>,
-  member: GuildMember,
-  oldState: VoiceState,
-  newState: VoiceState,
-): EmbedBuilder | null {
-  const tag = member.user.tag;
-  const oldId = oldState.channelId;
-  const newId = newState.channelId;
-
-  switch (classification.kind) {
-    case 'join':
-      return newId ? voiceJoinLog(member.id, tag, newId) : null;
-    case 'leave':
-      return oldId ? voiceLeaveLog(member.id, tag, oldId) : null;
-    case 'change':
-      return oldId && newId ? voiceChangeLog(member.id, tag, oldId, newId) : null;
-    case 'move':
-      if (!classification.executor || !oldId || !newId) {
-        return oldId && newId ? voiceChangeLog(member.id, tag, oldId, newId) : null;
-      }
-      return voiceMoveLog(
-        member.id,
-        tag,
-        classification.executor.id,
-        oldId,
-        newId,
-        classification.reason,
-      );
-    case 'disconnect':
-      if (!classification.executor || !oldId) {
-        return oldId ? voiceLeaveLog(member.id, tag, oldId) : null;
-      }
-      return voiceDisconnectLog(
-        member.id,
-        tag,
-        classification.executor.id,
-        oldId,
-        classification.reason,
-      );
-    default:
-      return null;
-  }
-}
-
 async function handleVoice(client: Client, oldState: VoiceState, newState: VoiceState) {
   try {
     await onVmuteVoiceUpdate(oldState, newState);
@@ -480,53 +424,10 @@ async function handleVoice(client: Client, oldState: VoiceState, newState: Voice
     logger.warn({ err }, 'vmute guard error');
   }
 
-  const guildId = newState.guild.id;
-  const member = newState.member;
-  if (!member) return;
-
-  const classification = await classifyVoiceChannelChange(oldState, newState);
-  if (classification.kind !== 'none') {
-    const embed = buildVoiceChannelLog(classification, member, oldState, newState);
-    if (embed) {
-      await sendLog(client, guildId, VOICE_LOG_EVENT_TYPE[classification.kind], embed);
-    }
-  }
-
-  const voiceChannel = newState.channel ?? oldState.channel;
-  const channelId = voiceChannel?.id;
-
-  if (oldState.serverMute !== newState.serverMute) {
-    const audit = await matchAuditEntry(newState.guild, AuditLogEvent.MemberUpdate, member.id);
-    await sendLog(
-      client,
-      guildId,
-      'voiceMute',
-      voiceMuteLog({
-        memberId: member.id,
-        memberTag: member.user.tag,
-        channelId,
-        by: formatExecutor(audit.executor),
-        reason: audit.reason ?? undefined,
-        muted: Boolean(newState.serverMute),
-      }),
-    );
-  }
-
-  if (oldState.serverDeaf !== newState.serverDeaf) {
-    const audit = await matchAuditEntry(newState.guild, AuditLogEvent.MemberUpdate, member.id);
-    await sendLog(
-      client,
-      guildId,
-      'voiceDeafen',
-      voiceDeafenLog({
-        memberId: member.id,
-        memberTag: member.user.tag,
-        channelId,
-        by: formatExecutor(audit.executor),
-        reason: audit.reason ?? undefined,
-        deafened: Boolean(newState.serverDeaf),
-      }),
-    );
+  try {
+    await handleVoiceLogging(client, oldState, newState);
+  } catch (err) {
+    logger.warn({ err }, 'voice log error');
   }
 }
 
@@ -593,8 +494,16 @@ async function maybeAntiDelete(client: Client, guildId: string, type: 'channelDe
     await sendLog(
       client,
       guildId,
-      'modAction',
-      antiDeleteLog(member.id, member.user.tag, executor.id, type, entry?.reason ?? undefined),
+      'protection',
+      protectionAlertLog({
+        guildName: guild.name,
+        guildIconUrl: guild.iconURL(),
+        memberId: member.id,
+        violation: type === 'channelDelete' ? 'channelDelete' : 'roleDelete',
+        strikeCount: strike.count,
+        strikeLimit: strike.limit,
+        auditReason: entry?.reason ?? undefined,
+      }),
     );
   }
 }
@@ -629,8 +538,16 @@ async function maybeAntiPerms(client: Client, guildId: string, _roleId: string) 
     await sendLog(
       client,
       guildId,
-      'modAction',
-      antiPermsLog(member.id, member.user.tag, executor.id, entry?.reason ?? undefined),
+      'protection',
+      protectionAlertLog({
+        guildName: guild.name,
+        guildIconUrl: guild.iconURL(),
+        memberId: member.id,
+        violation: 'rolePerms',
+        strikeCount: strike.count,
+        strikeLimit: strike.limit,
+        auditReason: entry?.reason ?? undefined,
+      }),
     );
   }
 }
