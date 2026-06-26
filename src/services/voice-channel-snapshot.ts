@@ -6,13 +6,34 @@ import {
 } from '../shared/log-assets.js';
 import { formatChannelCapacity } from '../shared/voice-log-capacity.js';
 
-const BG = '#2b2d31';
-const TEXT = '#dbdee1';
-const SUBTEXT = '#949ba4';
-const MUTED = '#ed4245';
-const ICON_SIZE = 18;
-const HEADER_ICON_SIZE = 20;
-const ICON_PAD = 8;
+/** Discord-like dark sidebar palette */
+const C = {
+  outer: '#1e1f22',
+  panel: '#2b2d31',
+  header: '#232428',
+  row: '#2b2d31',
+  rowHighlight: '#3f4147',
+  divider: '#1e1f22',
+  text: '#f2f3f5',
+  muted: '#949ba4',
+  fallbackAvatar: '#4e5058',
+  muteFallback: '#ed4245',
+} as const;
+
+const FONT = '"Segoe UI", "Helvetica Neue", Arial, sans-serif';
+const WIDTH = 440;
+const PANEL_PAD = 8;
+const CHANNEL_ROW_H = 36;
+const MEMBER_ROW_H = 42;
+const AVATAR = 32;
+const ICON_SIZE = 16;
+const ICON_PAD = 6;
+const HEADER_ICON = 18;
+
+export interface VoiceSnapshotOptions {
+  /** Highlight a member row (e.g. vmute target). */
+  highlightUserId?: string;
+}
 
 interface MemberVoiceFlags {
   serverMute: boolean;
@@ -30,9 +51,7 @@ async function loadSnapshotIcon(
 ): Promise<Awaited<ReturnType<typeof loadImage>> | null> {
   const source = getVoiceSnapshotIconSource(key);
   if (!source) return null;
-
   if (iconCache.has(source)) return iconCache.get(source) ?? null;
-
   try {
     const img = await loadImage(source);
     iconCache.set(source, img);
@@ -43,19 +62,61 @@ async function loadSnapshotIcon(
   }
 }
 
+function roundRect(
+  ctx: ReturnType<ReturnType<typeof createCanvas>['getContext']>,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  r: number,
+): void {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+}
+
+async function drawAvatar(
+  ctx: ReturnType<ReturnType<typeof createCanvas>['getContext']>,
+  avatarUrl: string,
+  cx: number,
+  cy: number,
+  size = AVATAR,
+): Promise<void> {
+  const r = size / 2;
+  try {
+    const img = await loadImage(avatarUrl);
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.clip();
+    ctx.drawImage(img, cx - r, cy - r, size, size);
+    ctx.restore();
+  } catch {
+    ctx.fillStyle = C.fallbackAvatar;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
 async function drawIcon(
   ctx: ReturnType<ReturnType<typeof createCanvas>['getContext']>,
   key: VoiceSnapshotIconKey,
-  x: number,
+  rightX: number,
   centerY: number,
-  size = ICON_SIZE,
 ): Promise<number> {
   const img = await loadSnapshotIcon(key);
-  if (img) {
-    ctx.drawImage(img, x - size, centerY - size / 2, size, size);
-    return size + ICON_PAD;
-  }
-  return 0;
+  if (!img) return 0;
+  ctx.drawImage(img, rightX - ICON_SIZE, centerY - ICON_SIZE / 2, ICON_SIZE, ICON_SIZE);
+  return ICON_SIZE + ICON_PAD;
 }
 
 async function drawStatusIcons(
@@ -82,138 +143,184 @@ async function drawStatusIcons(
       continue;
     }
     if (key === 'serverMute' || key === 'selfMute') {
-      ctx.fillStyle = MUTED;
-      ctx.font = '14px Arial, sans-serif';
+      ctx.fillStyle = C.muteFallback;
+      ctx.font = `13px ${FONT}`;
       ctx.fillText('🔇', x - 14, centerY + 5);
-      x -= 20;
+      x -= 18;
     }
   }
 }
 
-async function drawMemberAvatar(
-  ctx: ReturnType<ReturnType<typeof createCanvas>['getContext']>,
-  avatarUrl: string,
-  x: number,
-  y: number,
-): Promise<void> {
-  try {
-    const img = await loadImage(avatarUrl);
-    ctx.save();
-    ctx.beginPath();
-    ctx.arc(x + 16, y + 18, 16, 0, Math.PI * 2);
-    ctx.clip();
-    ctx.drawImage(img, x, y + 2, 32, 32);
-    ctx.restore();
-  } catch {
-    ctx.fillStyle = '#4e5058';
-    ctx.beginPath();
-    ctx.arc(x + 16, y + 18, 16, 0, Math.PI * 2);
-    ctx.fill();
-  }
-}
-
-async function drawChannelHeader(
+async function drawChannelRow(
   ctx: ReturnType<ReturnType<typeof createCanvas>['getContext']>,
   channelName: string,
+  memberCount: number,
+  userLimit: number,
+  y: number,
+  innerW: number,
 ): Promise<void> {
-  const startX = 14;
+  const iconX = 14;
   const channelIcon = await loadSnapshotIcon('voiceChannel');
   if (channelIcon) {
-    ctx.drawImage(channelIcon, startX, 10, HEADER_ICON_SIZE, HEADER_ICON_SIZE);
-    ctx.fillStyle = TEXT;
-    ctx.font = 'bold 16px Arial, sans-serif';
-    ctx.fillText(channelName.slice(0, 34), startX + HEADER_ICON_SIZE + 8, 28);
-    return;
+    ctx.drawImage(channelIcon, iconX, y + 9, HEADER_ICON, HEADER_ICON);
   }
 
-  ctx.fillStyle = TEXT;
-  ctx.font = 'bold 16px Arial, sans-serif';
-  ctx.fillText(`🔊 ${channelName}`.slice(0, 36), startX, 28);
+  ctx.fillStyle = C.text;
+  ctx.font = `600 15px ${FONT}`;
+  ctx.fillText(channelName.slice(0, 28), iconX + HEADER_ICON + 8, y + 24);
+
+  const capacity = formatChannelCapacity(memberCount, userLimit);
+  ctx.fillStyle = C.muted;
+  ctx.font = `12px ${FONT}`;
+  const capW = ctx.measureText(capacity).width;
+  ctx.fillText(capacity, innerW - capW - 12, y + 24);
+}
+
+async function drawMemberRow(
+  ctx: ReturnType<ReturnType<typeof createCanvas>['getContext']>,
+  member: GuildMember,
+  y: number,
+  innerW: number,
+  highlight: boolean,
+): Promise<void> {
+  if (highlight) {
+    ctx.fillStyle = C.rowHighlight;
+    roundRect(ctx, 6, y + 2, innerW - 12, MEMBER_ROW_H - 4, 4);
+    ctx.fill();
+  }
+
+  const avatarCx = 30;
+  const avatarCy = y + MEMBER_ROW_H / 2;
+  await drawAvatar(ctx, member.user.displayAvatarURL({ extension: 'png', size: 64 }), avatarCx, avatarCy);
+
+  ctx.fillStyle = highlight ? C.text : C.text;
+  ctx.font = `500 14px ${FONT}`;
+  ctx.fillText(member.displayName.slice(0, 26), 52, y + MEMBER_ROW_H / 2 + 5);
+
+  await drawStatusIcons(
+    ctx,
+    {
+      serverMute: Boolean(member.voice.serverMute),
+      selfMute: Boolean(member.voice.selfMute),
+      serverDeaf: Boolean(member.voice.serverDeaf),
+      selfDeaf: Boolean(member.voice.selfDeaf),
+      streaming: Boolean(member.voice.streaming),
+      selfVideo: Boolean(member.voice.selfVideo),
+    },
+    innerW - 10,
+    y + MEMBER_ROW_H / 2,
+  );
+}
+
+function drawPanelFrame(
+  ctx: ReturnType<ReturnType<typeof createCanvas>['getContext']>,
+  width: number,
+  height: number,
+): number {
+  ctx.fillStyle = C.outer;
+  ctx.fillRect(0, 0, width, height);
+
+  const innerX = PANEL_PAD;
+  const innerY = PANEL_PAD;
+  const innerW = width - PANEL_PAD * 2;
+  const innerH = height - PANEL_PAD * 2;
+
+  ctx.fillStyle = C.panel;
+  roundRect(ctx, innerX, innerY, innerW, innerH, 8);
+  ctx.fill();
+
+  ctx.strokeStyle = C.divider;
+  ctx.lineWidth = 1;
+  roundRect(ctx, innerX, innerY, innerW, innerH, 8);
+  ctx.stroke();
+
+  return innerW;
 }
 
 export async function renderVoiceChannelSnapshot(
   channel: VoiceBasedChannel,
+  options: VoiceSnapshotOptions = {},
 ): Promise<AttachmentBuilder | null> {
   if (!channel.isVoiceBased()) return null;
 
-  const members = [...channel.members.values()].slice(0, 14);
-  const width = 400;
-  const rowHeight = 44;
-  const headerHeight = 64;
-  const height = headerHeight + Math.max(members.length, 1) * rowHeight + 12;
+  const members = [...channel.members.values()].slice(0, 16);
+  const innerW = WIDTH - PANEL_PAD * 2;
+  const headerH = CHANNEL_ROW_H + 8;
+  const dividerH = 1;
+  const membersH = Math.max(members.length, 1) * MEMBER_ROW_H;
+  const height = PANEL_PAD * 2 + headerH + dividerH + membersH + 8;
 
-  const canvas = createCanvas(width, height);
+  const canvas = createCanvas(WIDTH, height);
   const ctx = canvas.getContext('2d');
+  const panelW = drawPanelFrame(ctx, WIDTH, height);
 
-  ctx.fillStyle = BG;
-  ctx.fillRect(0, 0, width, height);
+  let y = PANEL_PAD + 4;
+  await drawChannelRow(ctx, channel.name, channel.members.size, channel.userLimit, y, panelW);
+  y += CHANNEL_ROW_H;
 
-  await drawChannelHeader(ctx, channel.name);
-
-  const capacity = formatChannelCapacity(channel.members.size, channel.userLimit);
-  ctx.fillStyle = SUBTEXT;
-  ctx.font = '12px Arial, sans-serif';
-  ctx.fillText(`Members: ${capacity}`, 14, 48);
-
-  let y = headerHeight;
-  for (const member of members) {
-    const avatarUrl = member.user.displayAvatarURL({ extension: 'png', size: 64 });
-    await drawMemberAvatar(ctx, avatarUrl, 14, y);
-
-    ctx.fillStyle = TEXT;
-    ctx.font = 'bold 14px Arial, sans-serif';
-    const label = member.displayName.slice(0, 28);
-    ctx.fillText(label, 54, y + 22);
-
-    await drawStatusIcons(
-      ctx,
-      {
-        serverMute: Boolean(member.voice.serverMute),
-        selfMute: Boolean(member.voice.selfMute),
-        serverDeaf: Boolean(member.voice.serverDeaf),
-        selfDeaf: Boolean(member.voice.selfDeaf),
-        streaming: Boolean(member.voice.streaming),
-        selfVideo: Boolean(member.voice.selfVideo),
-      },
-      width - 12,
-      y + 20,
-    );
-
-    y += rowHeight;
-  }
+  ctx.fillStyle = C.divider;
+  ctx.fillRect(PANEL_PAD + 8, y, panelW - 16, 1);
+  y += dividerH + 4;
 
   if (!members.length) {
-    ctx.fillStyle = SUBTEXT;
-    ctx.font = '13px Arial, sans-serif';
-    ctx.fillText('No members in channel', 14, y + 22);
+    ctx.fillStyle = C.muted;
+    ctx.font = `13px ${FONT}`;
+    ctx.fillText('No one here yet', 52, y + 24);
+  } else {
+    for (const member of members) {
+      await drawMemberRow(
+        ctx,
+        member,
+        y,
+        panelW,
+        options.highlightUserId === member.id,
+      );
+      y += MEMBER_ROW_H;
+    }
   }
 
-  const buffer = canvas.toBuffer('image/png');
-  return new AttachmentBuilder(buffer, { name: 'voice-channel.png' });
+  return new AttachmentBuilder(canvas.toBuffer('image/png'), { name: 'voice-channel.png' });
 }
 
 export async function renderOfflineVmuteSnapshot(
   target: GuildMember,
 ): Promise<AttachmentBuilder> {
-  const width = 400;
-  const height = 140;
-  const canvas = createCanvas(width, height);
+  const innerW = WIDTH - PANEL_PAD * 2;
+  const height = PANEL_PAD * 2 + CHANNEL_ROW_H + 8 + 1 + MEMBER_ROW_H + 40;
+
+  const canvas = createCanvas(WIDTH, height);
   const ctx = canvas.getContext('2d');
+  const panelW = drawPanelFrame(ctx, WIDTH, height);
 
-  ctx.fillStyle = BG;
-  ctx.fillRect(0, 0, width, height);
+  let y = PANEL_PAD + 4;
+  await drawChannelRow(ctx, 'Voice Channels', 0, 0, y, panelW);
+  y += CHANNEL_ROW_H;
 
-  ctx.fillStyle = SUBTEXT;
-  ctx.font = 'bold 14px Arial, sans-serif';
-  ctx.fillText('Target not in voice', 14, 32);
+  ctx.fillStyle = C.divider;
+  ctx.fillRect(PANEL_PAD + 8, y, panelW - 16, 1);
+  y += 9;
 
-  const avatarUrl = target.user.displayAvatarURL({ extension: 'png', size: 128 });
-  await drawMemberAvatar(ctx, avatarUrl, 14, 52);
+  ctx.fillStyle = C.muted;
+  ctx.font = `12px ${FONT}`;
+  ctx.fillText('Not in voice channel', 52, y + 2);
+  y += 18;
 
-  ctx.fillStyle = TEXT;
-  ctx.font = 'bold 16px Arial, sans-serif';
-  ctx.fillText(target.displayName.slice(0, 32), 58, 78);
+  ctx.fillStyle = C.rowHighlight;
+  roundRect(ctx, 6, y + 2, panelW - 12, MEMBER_ROW_H - 4, 4);
+  ctx.fill();
 
-  const buffer = canvas.toBuffer('image/png');
-  return new AttachmentBuilder(buffer, { name: 'voice-offline.png' });
+  const avatarCx = 30;
+  const avatarCy = y + MEMBER_ROW_H / 2;
+  await drawAvatar(
+    ctx,
+    target.user.displayAvatarURL({ extension: 'png', size: 128 }),
+    avatarCx,
+    avatarCy,
+  );
+
+  ctx.fillStyle = C.text;
+  ctx.font = `600 14px ${FONT}`;
+  ctx.fillText(target.displayName.slice(0, 28), 52, y + MEMBER_ROW_H / 2 + 5);
+
+  return new AttachmentBuilder(canvas.toBuffer('image/png'), { name: 'voice-offline.png' });
 }

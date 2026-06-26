@@ -121,7 +121,10 @@ async function logChannelEvent(
     botFooter: botFooter(client),
   });
 
-  await sendVoiceLog(client, guildId, kind, embed, voiceChannel);
+  await sendVoiceLog(client, guildId, kind, embed, {
+    voiceChannel: voiceChannel ?? null,
+    highlightUserId: member.id,
+  });
 }
 
 async function logServerMuteChange(
@@ -164,7 +167,10 @@ async function logServerMuteChange(
     botFooter: botFooter(client),
   });
 
-  await sendVoiceLog(client, guildId, kind, embed, voiceChannel);
+  await sendVoiceLog(client, guildId, kind, embed, {
+    voiceChannel: voiceChannel ?? null,
+    highlightUserId: member.id,
+  });
 }
 
 async function logServerDeafChange(
@@ -195,7 +201,10 @@ async function logServerDeafChange(
     botFooter: botFooter(client),
   });
 
-  await sendVoiceLog(client, guildId, kind, embed, voiceChannel);
+  await sendVoiceLog(client, guildId, kind, embed, {
+    voiceChannel: voiceChannel ?? null,
+    highlightUserId: member.id,
+  });
 }
 
 async function logSelfVoiceToggle(
@@ -232,7 +241,10 @@ async function logSelfVoiceToggle(
     botFooter: botFooter(client),
   });
 
-  await sendVoiceLog(client, guildId, kind, embed, voiceChannel);
+  await sendVoiceLog(client, guildId, kind, embed, {
+    voiceChannel,
+    highlightUserId: member.id,
+  });
 }
 
 export async function handleVoiceLogging(

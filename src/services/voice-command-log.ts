@@ -45,7 +45,6 @@ export async function sendVmuteCommandLog(
       avatarUrl: target.user.displayAvatarURL(),
     },
     channel: inVoice && voiceChannel ? { id: voiceChannel.id, name: voiceChannel.name } : null,
-    notInVoice: !inVoice,
     source: 'command',
     reason,
     actionAt: actionAt ?? new Date(),
@@ -55,7 +54,7 @@ export async function sendVmuteCommandLog(
 
   let snapshot = null;
   if (inVoice && voiceChannel?.isVoiceBased()) {
-    snapshot = await renderVoiceChannelSnapshot(voiceChannel);
+    snapshot = await renderVoiceChannelSnapshot(voiceChannel, { highlightUserId: target.id });
   } else {
     snapshot = await renderOfflineVmuteSnapshot(target);
   }

@@ -49,6 +49,7 @@ function attachVoiceLogThumbnail(
 export interface SendVoiceLogOptions {
   voiceChannel?: VoiceBasedChannel | null;
   snapshot?: AttachmentBuilder | null;
+  highlightUserId?: string;
 }
 
 export async function sendVoiceLog(
@@ -68,7 +69,9 @@ export async function sendVoiceLog(
 
   let snapshot = options.snapshot ?? null;
   if (!snapshot && options.voiceChannel?.isVoiceBased()) {
-    snapshot = await renderVoiceChannelSnapshot(options.voiceChannel);
+    snapshot = await renderVoiceChannelSnapshot(options.voiceChannel, {
+      highlightUserId: options.highlightUserId,
+    });
   }
 
   if (snapshot) {

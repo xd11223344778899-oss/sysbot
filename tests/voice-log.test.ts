@@ -49,26 +49,24 @@ describe('buildVoiceLogEmbed', () => {
     });
     const desc = embed.data.description ?? '';
     assert.ok(desc.includes('To : <@2>'));
-    assert.ok(desc.includes('Display : User'));
     assert.ok(desc.includes('By : <@1>'));
     assert.ok(desc.includes('In : 🔊 Dream'));
-    assert.ok(desc.includes('Via : Bot Command'));
     assert.ok(desc.includes('Reason : spam'));
     assert.ok(desc.includes('Mute At : 4:22:1 AM - 2026/6/26'));
+    assert.ok(!desc.includes('Display :'));
+    assert.ok(!desc.includes('Via :'));
   });
 
-  it('shows not in voice when offline', () => {
+  it('omits In when no channel (details live in snapshot image)', () => {
     const embed = buildVoiceLogEmbed({
       kind: 'mute',
       actor: { id: '1', displayName: 'Admin' },
       target: { id: '2', displayName: 'User' },
-      notInVoice: true,
       source: 'command',
     });
     const desc = embed.data.description ?? '';
-    assert.ok(desc.includes('In : Not in voice channel'));
-    assert.ok(desc.includes('Via : Bot Command'));
-    assert.ok(!desc.includes('🔊'));
+    assert.ok(!desc.includes('In :'));
+    assert.ok(!desc.includes('Not in voice channel'));
   });
 
   it('omits Reason for manual source', () => {
@@ -82,7 +80,6 @@ describe('buildVoiceLogEmbed', () => {
     const desc = embed.data.description ?? '';
     assert.ok(!desc.includes('Reason :'));
     assert.ok(!desc.includes('Un Mute At'));
-    assert.ok(!desc.includes('Via : Bot Command'));
     assert.equal(embed.data.title, 'UnMute Member');
   });
 });

@@ -70,8 +70,6 @@ export interface VoiceLogEmbedInput {
   actor: VoiceLogParticipant;
   target: VoiceLogParticipant;
   channel?: VoiceLogChannelRef | null;
-  /** When true, show "Not in voice channel" for In field */
-  notInVoice?: boolean;
   source: 'command' | 'manual' | 'self';
   reason?: string | null;
   actionAt?: Date | null;
@@ -84,22 +82,13 @@ function displayName(p: VoiceLogParticipant): string {
 }
 
 export function buildVoiceLogEmbed(input: VoiceLogEmbedInput): EmbedBuilder {
-  const targetDisplay = displayName(input.target);
-
   const lines: string[] = [
     `To : ${mentionOnly(input.target.id)}`,
-    `Display : ${targetDisplay}`,
     `By : ${mentionOnly(input.actor.id)}`,
   ];
 
-  if (input.notInVoice) {
-    lines.push('In : Not in voice channel');
-  } else if (input.channel) {
+  if (input.channel) {
     lines.push(`In : 🔊 ${input.channel.name}`);
-  }
-
-  if (input.source === 'command') {
-    lines.push('Via : Bot Command');
   }
 
   if (input.source === 'command' && input.reason?.trim()) {
