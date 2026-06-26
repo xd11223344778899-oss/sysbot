@@ -2,7 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { formatVoiceLogTime } from '../src/shared/log-time.js';
 import { buildVoiceLogEmbed } from '../src/shared/voice-log-embed.js';
-import { formatChannelCapacity } from '../src/shared/voice-log-capacity.js';
+import { formatChannelCapacity, formatCapacityCount, formatCapacityLimit } from '../src/shared/voice-log-capacity.js';
 import {
   markCommandVoiceLogSent,
   wasCommandVoiceLogSent,
@@ -22,6 +22,13 @@ describe('formatChannelCapacity', () => {
 
   it('formats unlimited channel as infinity', () => {
     assert.equal(formatChannelCapacity(3, 0), '3 / ∞');
+  });
+
+  it('formats pill segments with zero padding', () => {
+    assert.equal(formatCapacityCount(2), '02');
+    assert.equal(formatCapacityCount(12), '12');
+    assert.equal(formatCapacityLimit(12), '12');
+    assert.equal(formatCapacityLimit(0), '∞');
   });
 });
 
@@ -50,7 +57,7 @@ describe('buildVoiceLogEmbed', () => {
     const desc = embed.data.description ?? '';
     assert.ok(desc.includes('To : <@2>'));
     assert.ok(desc.includes('By : <@1>'));
-    assert.ok(desc.includes('In : 🔊 Dream'));
+    assert.ok(desc.includes('In : <#c>'));
     assert.ok(desc.includes('Reason : spam'));
     assert.ok(desc.includes('Mute At : 4:22:1 AM - 2026/6/26'));
     assert.ok(!desc.includes('Display :'));

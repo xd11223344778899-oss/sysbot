@@ -1,7 +1,7 @@
 import { EmbedBuilder } from 'discord.js';
 import { type VoiceLogIconKey, getVoiceLogIconUrl } from './log-assets.js';
 import { formatVoiceLogTime } from './log-time.js';
-import { mentionOnly } from './log-embed.js';
+import { channelMention, mentionOnly } from './log-embed.js';
 
 export const VOICE_LOG_COLOR = 0x5865f2;
 
@@ -88,7 +88,7 @@ export function buildVoiceLogEmbed(input: VoiceLogEmbedInput): EmbedBuilder {
   ];
 
   if (input.channel) {
-    lines.push(`In : 🔊 ${input.channel.name}`);
+    lines.push(`In : ${channelMention(input.channel.id)}`);
   }
 
   if (input.source === 'command' && input.reason?.trim()) {

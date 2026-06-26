@@ -4,7 +4,7 @@ import {
   getVoiceSnapshotIconSource,
   type VoiceSnapshotIconKey,
 } from '../shared/log-assets.js';
-import { formatChannelCapacity } from '../shared/voice-log-capacity.js';
+import { formatCapacityCount, formatCapacityLimit } from '../shared/voice-log-capacity.js';
 import { ensureSnapshotFonts, snapshotFontBold, snapshotFontRegular } from './voice-snapshot-fonts.js';
 
 const BG = '#2b2d31';
@@ -12,15 +12,21 @@ const TEXT = '#dbdee1';
 const SUBTEXT = '#949ba4';
 const MUTED = '#ed4245';
 const FALLBACK_AVATAR = '#4e5058';
+const BADGE_LEFT_BG = '#1a1b1e';
+const BADGE_RIGHT_BG = '#2e3035';
+const BADGE_TEXT = '#b5bac1';
 
 const WIDTH = 400;
-const HEADER_HEIGHT = 64;
+const HEADER_HEIGHT = 40;
 const ROW_HEIGHT = 44;
+const HEADER_CENTER_Y = 19;
 const AVATAR = 32;
 const ICON_SIZE = 18;
 const ICON_PAD = 8;
 const HEADER_ICON = 18;
 const HIGHLIGHT_ALPHA = 0.15;
+const BADGE_H = 18;
+const BADGE_PAD_X = 8;
 
 export interface VoiceSnapshotOptions {
   /** Highlight a member row (e.g. vmute target). */
@@ -92,6 +98,51 @@ function drawRowHighlight(
   ctx.restore();
 }
 
+function drawCapacityBadge(
+  ctx: ReturnType<ReturnType<typeof createCanvas>['getContext']>,
+  memberCount: number,
+  userLimit: number,
+  badgeRight: number,
+  centerY: number,
+): void {
+  const leftText = formatCapacityCount(memberCount);
+  const rightText = formatCapacityLimit(userLimit);
+
+  ctx.font = snapshotFontRegular(11);
+  const leftTextW = ctx.measureText(leftText).width;
+  const rightTextW = ctx.measureText(rightText).width;
+  const leftW = leftTextW + BADGE_PAD_X * 2;
+  const rightW = rightTextW + BADGE_PAD_X * 2;
+  const totalW = leftW + rightW;
+  const x = badgeRight - totalW;
+  const y = centerY - BADGE_H / 2;
+  const r = BADGE_H / 2;
+
+  ctx.fillStyle = BADGE_RIGHT_BG;
+  roundRect(ctx, x, y, totalW, BADGE_H, r);
+  ctx.fill();
+
+  ctx.save();
+  roundRect(ctx, x, y, leftW, BADGE_H, r);
+  ctx.clip();
+  ctx.fillStyle = BADGE_LEFT_BG;
+  ctx.fillRect(x, y, leftW, BADGE_H);
+  ctx.restore();
+
+  ctx.strokeStyle = '#3a3c42';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(x + leftW, y + 3);
+  ctx.lineTo(x + leftW, y + BADGE_H - 3);
+  ctx.stroke();
+
+  ctx.fillStyle = BADGE_TEXT;
+  ctx.textBaseline = 'middle';
+  ctx.fillText(leftText, x + leftW / 2, centerY);
+  ctx.fillText(rightText, x + leftW + rightW / 2, centerY);
+  ctx.textBaseline = 'alphabetic';
+}
+
 async function drawAvatar(
   ctx: ReturnType<ReturnType<typeof createCanvas>['getContext']>,
   avatarUrl: string,
@@ -153,7 +204,9 @@ async function drawStatusIcons(
     if (key === 'serverMute' || key === 'selfMute') {
       ctx.fillStyle = MUTED;
       ctx.font = snapshotFontRegular(13);
-      ctx.fillText('M', x - 10, centerY + 4);
+      ctx.textBaseline = 'middle';
+      ctx.fillText('M', x - 10, centerY);
+      ctx.textBaseline = 'alphabetic';
       x -= 14;
     }
   }
@@ -164,6 +217,7 @@ async function drawChannelHeader(
   channelName: string,
   memberCount: number,
   userLimit: number,
+  showBadge = true,
 ): Promise<void> {
   const iconX = 14;
   const nameX = iconX + HEADER_ICON + 8;
@@ -174,16 +228,19 @@ async function drawChannelHeader(
   ctx.font = snapshotFontBold(15);
 
   if (channelIcon) {
-    ctx.drawImage(channelIcon, iconX, 10, HEADER_ICON, HEADER_ICON);
-    ctx.fillText(name, nameX, 28);
+    ctx.drawImage(channelIcon, iconX, HEADER_CENTER_Y - HEADER_ICON / 2, HEADER_ICON, HEADER_ICON);
+    ctx.textBaseline = 'middle';
+    ctx.fillText(name, nameX, HEADER_CENTER_Y);
+    ctx.textBaseline = 'alphabetic';
   } else {
-    ctx.fillText(`> ${name}`.slice(0, 36), iconX, 28);
+    ctx.textBaseline = 'middle';
+    ctx.fillText(`> ${name}`.slice(0, 36), iconX, HEADER_CENTER_Y);
+    ctx.textBaseline = 'alphabetic';
   }
 
-  const capacity = formatChannelCapacity(memberCount, userLimit);
-  ctx.fillStyle = SUBTEXT;
-  ctx.font = snapshotFontRegular(12);
-  ctx.fillText(`Members: ${capacity}`, 14, 48);
+  if (showBadge) {
+    drawCapacityBadge(ctx, memberCount, userLimit, WIDTH - 14, HEADER_CENTER_Y);
+  }
 }
 
 async function drawMemberRow(
@@ -196,15 +253,16 @@ async function drawMemberRow(
     drawRowHighlight(ctx, y);
   }
 
-  const avatarCx = 30;
-  const textY = y + 22;
+  const centerY = y + ROW_HEIGHT / 2;
   const name = labelText(member.displayName || member.user.username, 28);
 
-  await drawAvatar(ctx, member.user.displayAvatarURL({ extension: 'png', size: 64 }), avatarCx, textY);
+  await drawAvatar(ctx, member.user.displayAvatarURL({ extension: 'png', size: 64 }), 30, centerY);
 
   ctx.fillStyle = TEXT;
   ctx.font = snapshotFontBold(14);
-  ctx.fillText(name, 54, textY);
+  ctx.textBaseline = 'middle';
+  ctx.fillText(name, 54, centerY + 1);
+  ctx.textBaseline = 'alphabetic';
 
   await drawStatusIcons(
     ctx,
@@ -217,7 +275,7 @@ async function drawMemberRow(
       selfVideo: Boolean(member.voice.selfVideo),
     },
     WIDTH - 12,
-    textY,
+    centerY,
   );
 }
 
@@ -244,7 +302,9 @@ export async function renderVoiceChannelSnapshot(
   if (!members.length) {
     ctx.fillStyle = SUBTEXT;
     ctx.font = snapshotFontRegular(13);
-    ctx.fillText('No one here yet', 54, y + 22);
+    ctx.textBaseline = 'middle';
+    ctx.fillText('No one here yet', 54, y + ROW_HEIGHT / 2);
+    ctx.textBaseline = 'alphabetic';
   } else {
     for (const member of members) {
       await drawMemberRow(ctx, member, y, options.highlightUserId === member.id);
@@ -268,7 +328,7 @@ export async function renderOfflineVmuteSnapshot(
   ctx.fillStyle = BG;
   ctx.fillRect(0, 0, WIDTH, height);
 
-  await drawChannelHeader(ctx, 'Voice Channels', 0, 0);
+  await drawChannelHeader(ctx, 'Voice Channels', 0, 0, false);
 
   let y = HEADER_HEIGHT;
   ctx.fillStyle = SUBTEXT;
@@ -278,18 +338,20 @@ export async function renderOfflineVmuteSnapshot(
 
   drawRowHighlight(ctx, y);
 
-  const textY = y + 22;
+  const centerY = y + ROW_HEIGHT / 2;
   const name = labelText(target.displayName || target.user.username, 28);
   await drawAvatar(
     ctx,
     target.user.displayAvatarURL({ extension: 'png', size: 128 }),
     30,
-    textY,
+    centerY,
   );
 
   ctx.fillStyle = TEXT;
   ctx.font = snapshotFontBold(14);
-  ctx.fillText(name, 54, textY);
+  ctx.textBaseline = 'middle';
+  ctx.fillText(name, 54, centerY + 1);
+  ctx.textBaseline = 'alphabetic';
 
   return new AttachmentBuilder(canvas.toBuffer('image/png'), { name: 'voice-offline.png' });
 }

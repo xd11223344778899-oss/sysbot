@@ -77,6 +77,10 @@ export function mentionOnly(id: string): string {
   return `<@${id}>`;
 }
 
+export function channelMention(id: string): string {
+  return `<#${id}>`;
+}
+
 export interface ProtectionAlertInput {
   guildName: string;
   guildIconUrl?: string | null;
