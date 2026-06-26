@@ -5,6 +5,7 @@ import {
   type VoiceSnapshotIconKey,
 } from '../shared/log-assets.js';
 import { formatChannelCapacity } from '../shared/voice-log-capacity.js';
+import { ensureSnapshotFonts, snapshotFontBold, snapshotFontRegular } from './voice-snapshot-fonts.js';
 
 const BG = '#2b2d31';
 const TEXT = '#dbdee1';
@@ -21,11 +22,6 @@ const ICON_PAD = 8;
 const HEADER_ICON = 18;
 const HIGHLIGHT_ALPHA = 0.15;
 
-const FONT_CHANNEL = 'bold 15px Arial, sans-serif';
-const FONT_MEMBER = 'bold 14px Arial, sans-serif';
-const FONT_SMALL = '12px Arial, sans-serif';
-const FONT_EMPTY = '13px Arial, sans-serif';
-
 export interface VoiceSnapshotOptions {
   /** Highlight a member row (e.g. vmute target). */
   highlightUserId?: string;
@@ -41,6 +37,11 @@ interface MemberVoiceFlags {
 }
 
 const iconCache = new Map<string, Awaited<ReturnType<typeof loadImage>> | null>();
+
+function labelText(value: string, maxLen: number): string {
+  const trimmed = value.trim();
+  return trimmed ? trimmed.slice(0, maxLen) : '?';
+}
 
 async function loadSnapshotIcon(
   key: VoiceSnapshotIconKey,
@@ -151,11 +152,9 @@ async function drawStatusIcons(
     }
     if (key === 'serverMute' || key === 'selfMute') {
       ctx.fillStyle = MUTED;
-      ctx.font = FONT_EMPTY;
-      ctx.textBaseline = 'middle';
-      ctx.fillText('🔇', x - 14, centerY);
-      ctx.textBaseline = 'alphabetic';
-      x -= 18;
+      ctx.font = snapshotFontRegular(13);
+      ctx.fillText('M', x - 10, centerY + 4);
+      x -= 14;
     }
   }
 }
@@ -169,23 +168,21 @@ async function drawChannelHeader(
   const iconX = 14;
   const nameX = iconX + HEADER_ICON + 8;
   const channelIcon = await loadSnapshotIcon('voiceChannel');
+  const name = labelText(channelName, 30);
+
+  ctx.fillStyle = TEXT;
+  ctx.font = snapshotFontBold(15);
 
   if (channelIcon) {
     ctx.drawImage(channelIcon, iconX, 10, HEADER_ICON, HEADER_ICON);
-    ctx.fillStyle = TEXT;
-    ctx.font = FONT_CHANNEL;
-    ctx.textBaseline = 'middle';
-    ctx.fillText(channelName.slice(0, 30), nameX, 10 + HEADER_ICON / 2);
-    ctx.textBaseline = 'alphabetic';
+    ctx.fillText(name, nameX, 28);
   } else {
-    ctx.fillStyle = TEXT;
-    ctx.font = FONT_CHANNEL;
-    ctx.fillText(`🔊 ${channelName}`.slice(0, 36), iconX, 28);
+    ctx.fillText(`> ${name}`.slice(0, 36), iconX, 28);
   }
 
   const capacity = formatChannelCapacity(memberCount, userLimit);
   ctx.fillStyle = SUBTEXT;
-  ctx.font = FONT_SMALL;
+  ctx.font = snapshotFontRegular(12);
   ctx.fillText(`Members: ${capacity}`, 14, 48);
 }
 
@@ -195,17 +192,19 @@ async function drawMemberRow(
   y: number,
   highlight: boolean,
 ): Promise<void> {
-  const avatarCx = 30;
-  const avatarCy = y + 22;
-  const centerY = y + 22;
+  if (highlight) {
+    drawRowHighlight(ctx, y);
+  }
 
-  await drawAvatar(ctx, member.user.displayAvatarURL({ extension: 'png', size: 64 }), avatarCx, avatarCy);
+  const avatarCx = 30;
+  const textY = y + 22;
+  const name = labelText(member.displayName || member.user.username, 28);
+
+  await drawAvatar(ctx, member.user.displayAvatarURL({ extension: 'png', size: 64 }), avatarCx, textY);
 
   ctx.fillStyle = TEXT;
-  ctx.font = FONT_MEMBER;
-  ctx.textBaseline = 'middle';
-  ctx.fillText(member.displayName.slice(0, 28), 54, centerY);
-  ctx.textBaseline = 'alphabetic';
+  ctx.font = snapshotFontBold(14);
+  ctx.fillText(name, 54, textY);
 
   await drawStatusIcons(
     ctx,
@@ -218,12 +217,8 @@ async function drawMemberRow(
       selfVideo: Boolean(member.voice.selfVideo),
     },
     WIDTH - 12,
-    centerY,
+    textY,
   );
-
-  if (highlight) {
-    drawRowHighlight(ctx, y);
-  }
 }
 
 export async function renderVoiceChannelSnapshot(
@@ -231,6 +226,8 @@ export async function renderVoiceChannelSnapshot(
   options: VoiceSnapshotOptions = {},
 ): Promise<AttachmentBuilder | null> {
   if (!channel.isVoiceBased()) return null;
+
+  ensureSnapshotFonts();
 
   const members = [...channel.members.values()].slice(0, 14);
   const height = HEADER_HEIGHT + Math.max(members.length, 1) * ROW_HEIGHT + 12;
@@ -246,7 +243,7 @@ export async function renderVoiceChannelSnapshot(
   let y = HEADER_HEIGHT;
   if (!members.length) {
     ctx.fillStyle = SUBTEXT;
-    ctx.font = FONT_EMPTY;
+    ctx.font = snapshotFontRegular(13);
     ctx.fillText('No one here yet', 54, y + 22);
   } else {
     for (const member of members) {
@@ -261,6 +258,8 @@ export async function renderVoiceChannelSnapshot(
 export async function renderOfflineVmuteSnapshot(
   target: GuildMember,
 ): Promise<AttachmentBuilder> {
+  ensureSnapshotFonts();
+
   const height = HEADER_HEIGHT + ROW_HEIGHT + 28;
 
   const canvas = createCanvas(WIDTH, height);
@@ -273,26 +272,24 @@ export async function renderOfflineVmuteSnapshot(
 
   let y = HEADER_HEIGHT;
   ctx.fillStyle = SUBTEXT;
-  ctx.font = FONT_SMALL;
+  ctx.font = snapshotFontRegular(12);
   ctx.fillText('Not in voice channel', 54, y + 4);
   y += 16;
 
-  const avatarCx = 30;
-  const centerY = y + 22;
+  drawRowHighlight(ctx, y);
+
+  const textY = y + 22;
+  const name = labelText(target.displayName || target.user.username, 28);
   await drawAvatar(
     ctx,
     target.user.displayAvatarURL({ extension: 'png', size: 128 }),
-    avatarCx,
-    centerY,
+    30,
+    textY,
   );
 
   ctx.fillStyle = TEXT;
-  ctx.font = FONT_MEMBER;
-  ctx.textBaseline = 'middle';
-  ctx.fillText(target.displayName.slice(0, 28), 54, centerY);
-  ctx.textBaseline = 'alphabetic';
-
-  drawRowHighlight(ctx, y);
+  ctx.font = snapshotFontBold(14);
+  ctx.fillText(name, 54, textY);
 
   return new AttachmentBuilder(canvas.toBuffer('image/png'), { name: 'voice-offline.png' });
 }
